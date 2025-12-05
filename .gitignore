@@ -1,0 +1,59 @@
+# ----------------------------
+# PYTHON
+# ----------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyd
+*.pkl
+*.log
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# FastAPI reload artifacts
+*.pid
+
+# ----------------------------
+# ENV / SECRETS
+# ----------------------------
+**/.env
+
+# ----------------------------
+# EDITORS
+# ----------------------------
+.vscode/
+.idea/
+
+# ----------------------------
+# OS TRASH
+# ----------------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------------
+# NODE / FRONTEND (for Electron later)
+# ----------------------------
+node_modules/
+dist/
+build/
+*.asar
+npm-debug.log
+yarn-error.log
+
+# ----------------------------
+# ELECTRON PACKAGER OUTPUT
+# ----------------------------
+/release
+/out
+/bin
+
+# ----------------------------
+# BACKEND ARTIFACTS
+# ----------------------------
+*.db
+*.sqlite
+*.sqlite3

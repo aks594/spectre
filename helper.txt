@@ -1,0 +1,21 @@
+Flutter and MERN stack developer skilled in building high-performance mobile and web apps. Delivered projectslike Stockship and KO-Captain that increasedshipment tracking accuracy by 35% and improved data processing speed by 40%. Expert in Flutter UI/UX, REST API integration, and state management with Provider and GetX. Proven ability to deliver production-ready solutions in fast-paced, team-driven environments.
+---
+We are looking for enthusiastic Flutter Trainees who are eager to learn and build their career in mobile app development. You will work closely with our development team, gain hands-on experience, and get exposure to real-time projects.
+---
+
+
+```
+curl -X POST http://127.0.0.1:8000/session/init \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resume_text": "Flutter and MERN stack developer skilled in building high-performance mobile and web apps. Delivered projects like Stockship and KO-Captain that increasedshipment tracking accuracy by 35% and improved data processing speed by 40%. Expert in Flutter UI/UX, REST API integration, and state management with Provider and GetX. Proven ability to deliver production-ready solutions in fast-paced, team-driven environments.",
+    "jd_text": "We are looking for enthusiastic Flutter Trainees who are eager to learn and build their career in mobile app development. You will work closely with our development team, gain hands-on experience, and get exposure to real-time projects.",
+    "company": "Hacker Kernel",
+    "role": "Flutter Trainee",
+    "extra_instructions": "Answer as a calm, confident junior dev."
+}'
+
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Tell me about yourself."}'
+```
