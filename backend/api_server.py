@@ -11,13 +11,18 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 
-STT_CONNECTIONS = set()
+STT_CONNECTIONS: set[WebSocket] = set()
 
 from llm_pipeline import (
     SessionState,
     summarize_resume,
     summarize_jd,
     stream_answer,
+)
+from services.llm_service import (
+    generate_stream_answer,
+    generate_stream_summary,
+    set_session_provider,
 )
 
 load_dotenv()
@@ -36,7 +41,7 @@ app.add_middleware(
 # ---------- GLOBAL SESSION STATE ----------
 
 CURRENT_SESSION: Optional[SessionState] = None
-STT_CONNECTIONS: set[WebSocket] = set()
+set_session_provider(lambda: CURRENT_SESSION)
 
 # ---------- REQUEST MODELS ----------
 
@@ -124,39 +129,59 @@ def ask(req: AskRequest):
 
 @app.websocket("/ws/ask")
 async def ws_ask(websocket: WebSocket):
-    """
-    WebSocket endpoint:
-    Client sends: { "question": "Tell me about yourself" }
-    Server streams token chunks back as WebSocket text frames.
-    """
+    """Streams summary + answer frames following the Stage-4 protocol."""
     await websocket.accept()
 
     global CURRENT_SESSION
 
+    async def _send_error(message: str) -> None:
+        await websocket.send_json({"type": "error", "error": message})
+
     try:
-        while True:
-            data = await websocket.receive_json()
+        payload = await websocket.receive_json()
+        question_raw = (payload.get("question_raw") or payload.get("question") or "").strip()
+        question_clean = (payload.get("question_clean") or question_raw).strip()
+        metadata = payload.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
 
-            question = data.get("question", "").strip()
-            if not question:
-                await websocket.send_text("[ERROR] Question cannot be empty.")
-                continue
+        if not question_clean:
+            await _send_error("Question cannot be empty.")
+            return
 
-            if CURRENT_SESSION is None:
-                await websocket.send_text("[ERROR] No session initialized. Call /session/init first.")
-                continue
+        if CURRENT_SESSION is None:
+            await _send_error("No session initialized. Call /session/init first.")
+            return
 
-            # Stream tokens
-            for chunk in stream_answer(CURRENT_SESSION, question):
-                if chunk:
-                    await websocket.send_text(chunk)
+        try:
+            async for summary_chunk in generate_stream_summary(question_clean):
+                if summary_chunk:
+                    await websocket.send_json({"type": "summary", "chunk": summary_chunk})
+        except Exception as summary_error:
+            await _send_error(str(summary_error) or "Failed to summarize question.")
+            return
 
-            await websocket.send_text("[END]")  # mark completion
+        await websocket.send_json({"type": "summary_done"})
+
+        try:
+            async for answer_chunk in generate_stream_answer(question_clean, question_raw, metadata):
+                if answer_chunk:
+                    await websocket.send_json({"type": "answer", "chunk": answer_chunk})
+        except Exception as answer_error:
+            await _send_error(str(answer_error) or "Failed to stream answer.")
+            return
+
+        await websocket.send_json({"type": "end", "status": "done"})
 
     except WebSocketDisconnect:
         print("WS client disconnected.")
     except Exception as e:
-        await websocket.send_text(f"[ERROR] {str(e)}")
+        await _send_error(str(e) or "Backend error")
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 async def broadcast_stt(text: str):
     """
@@ -166,9 +191,10 @@ async def broadcast_stt(text: str):
         return
 
     dead = set()
+    payload = {"text": text}
     for ws in STT_CONNECTIONS:
         try:
-            await ws.send_text(text)
+            await ws.send_json(payload)
         except Exception:
             dead.add(ws)
 
@@ -205,5 +231,5 @@ async def stt_push(req: STTPushRequest):
     if not text:
         return {"status": "ignored"}
 
-    asyncio.create_task(broadcast_stt(text))
+    await broadcast_stt(text)
     return {"status": "ok"}

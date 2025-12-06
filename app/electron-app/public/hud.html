@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>InterviewAI HUD</title>
+    <link rel="stylesheet" href="hud.css">
+  </head>
+  <body class="hud-body">
+    <div class="hud-viewport">
+      <div class="hud-shell">
+        <div class="hud-capsule">
+          <div class="hud-left">
+            <div class="hud-brand">
+              <span class="brand-glow" aria-hidden="true"></span>
+              <span class="brand-text">InterviewAI</span>
+            </div>
+            <button id="hide-btn" class="pill-btn ghost-btn collapse-toggle" aria-label="Hide HUD">Hide</button>
+            <button class="pill-btn ghost-btn collapse-show" aria-label="Show HUD">Show</button>
+            <button class="icon-btn layout-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Layout menu">
+              <span class="icon-dots" aria-hidden="true">···</span>
+            </button>
+            <div class="layout-menu hidden" role="menu">
+              <div class="menu-title">Layout</div>
+              <div class="menu-row">
+                <span class="menu-label">Position</span>
+                <div class="menu-actions">
+                  <button id="move-left-btn" class="chip-btn" aria-label="Move HUD left">&lt;</button>
+                  <button id="move-right-btn" class="chip-btn" aria-label="Move HUD right">&gt;</button>
+                </div>
+              </div>
+              <div class="menu-row">
+                <span class="menu-label">Scale</span>
+                <div class="menu-actions">
+                  <button id="scale-down-btn" class="chip-btn" aria-label="Scale HUD down">-</button>
+                  <button id="scale-up-btn" class="chip-btn" aria-label="Scale HUD up">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-center">
+            <div class="transcript" id="transcript" role="log" aria-live="polite">
+              Waiting for transcript...
+            </div>
+          </div>
+
+          <div class="hud-right">
+            <div class="hud-timer" aria-label="Session timer">23 mins</div>
+            <div class="hud-status">
+              <div class="status-badge">
+                <span class="icon-screen" aria-hidden="true"></span>
+                <span class="status-indicator status-active" aria-hidden="true"></span>
+              </div>
+              <div class="status-badge muted">
+                <span class="icon-mic" aria-hidden="true"></span>
+                <span class="status-indicator status-idle" aria-hidden="true"></span>
+              </div>
+              <div class="ws-status">
+                <span id="ws-status-dot" class="status-dot status-connecting" aria-hidden="true"></span>
+                <span id="ws-status-label" class="status-label">Connecting...</span>
+              </div>
+            </div>
+            <div class="hud-actions-inline">
+              <button class="icon-btn log-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Log panel">≡</button>
+              <button class="pill-btn ghost-btn" id="clear-transcript-btn">Clear</button>
+              <button id="stop-btn" class="pill-btn accent-btn">Stop Listening</button>
+              <button id="exit-btn" class="pill-btn danger-btn">Exit</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="chin-actions">
+          <button id="answer-btn" class="chin-btn primary">Answer Question</button>
+          <button id="analyze-btn" class="chin-btn secondary">Analyze Screen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="log-panel hidden" id="log-panel" aria-live="polite">
+      <div class="log-section">
+        <div class="log-title">System Audio</div>
+        <div class="log-lines" id="system-audio-log">Listening for system audio...</div>
+      </div>
+      <div class="log-section muted">
+        <div class="log-title">Mic Audio</div>
+        <div class="log-lines">Mic disabled</div>
+      </div>
+    </div>
+
+    <div id="hud-toast" class="hud-toast" role="status" aria-live="polite"></div>
+    <script src="../renderer.js"></script>
+  </body>
+</html>

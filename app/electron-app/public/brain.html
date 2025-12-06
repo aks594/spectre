@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>InterviewAI Brain Overlay</title>
+    <link rel="stylesheet" href="brain.css">
+  </head>
+  <body class="brain-body">
+    <div class="brain-viewport">
+      <div class="brain-shell">
+        <header class="brain-header">
+          <div class="header-left">
+            <div class="history-controls">
+              <button id="history-prev-btn" class="nav-btn" aria-label="Previous" disabled>&larr;</button>
+              <button id="history-next-btn" class="nav-btn" aria-label="Next" disabled>&rarr;</button>
+            </div>
+            <div class="session-chip">Interview Intelligence</div>
+          </div>
+          <div class="header-right">
+            <button id="close-brain-btn" class="icon-btn close-btn" aria-label="Close overlay">&times;</button>
+          </div>
+        </header>
+
+        <main class="brain-content">
+          <section class="content-block question-block">
+            <div class="block-header">
+              <span class="block-label">Summarized question:</span>
+              <span id="question-status-chip" class="status-chip">Waiting</span>
+            </div>
+            <div id="question-stream" class="stream-text question-text" role="log" aria-live="polite">
+              Waiting for interviewer question...
+            </div>
+          </section>
+
+          <div class="divider"></div>
+
+          <section class="content-block answer-block">
+            <div class="block-header">
+              <span class="block-label">Answer</span>
+              <span id="answer-status-chip" class="status-chip">Idle</span>
+            </div>
+            <div id="answer-stream" class="stream-text answer-text" role="log" aria-live="polite">
+              Awaiting model answer...
+            </div>
+          </section>
+        </main>
+
+        <footer class="brain-footer">
+          <div id="brain-status" class="footer-status">Ready</div>
+          <div class="footer-actions">
+            <button id="copy-answer-btn" class="footer-btn">Copy answer</button>
+            <button id="copy-code-btn" class="footer-btn ghost-btn">Copy code</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Hidden elements required by renderer.js logic -->
+    <div style="display:none;">
+      <span id="question-section-state"></span>
+      <span id="answer-section-state"></span>
+    </div>
+    <script src="../renderer.js"></script>
+  </body>
+</html>

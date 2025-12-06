@@ -109,6 +109,32 @@
       flex: 1; /* Takes minimal space necessary */
       min-height: 100px;
       max-height: 30%;
+      position: relative;
+    }
+
+    .transcript-actions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .mini-btn {
+      background: #2a2a2d;
+      color: var(--text-muted);
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .mini-btn:hover {
+      background: #333;
+      color: var(--text-main);
+      border-color: #444;
     }
 
     #sttBox {
@@ -188,7 +214,10 @@
 
     <div class="card transcript-card">
       <div class="label">Listening To Interviewer...</div>
-      <div id="sttBox">Waiting for speech...</div>
+      <div class="transcript-actions">
+        <button id="clearSttBtn" class="mini-btn">Clear</button>
+      </div>
+      <div id="sttBox" contenteditable="true">Waiting for speech...</div>
     </div>
 
     <div class="btn-container">
@@ -206,6 +235,7 @@
   const sttBox = document.getElementById("sttBox");
   const answerBox = document.getElementById("answerBox");
   const answerBtn = document.getElementById("answerBtn");
+  const clearSttBtn = document.getElementById("clearSttBtn");
 
   let lastTranscript = "";
   let wsSTT = null;
@@ -216,11 +246,17 @@
   async function initSession() {
     // Wrapped in a timeout to allow UI to render first before blocking prompts appear
     setTimeout(async () => {
-        const resume = prompt("Paste resume summary:", "Flutter and MERN stack developer skilled in building high-performance mobile and web apps. Delivered projectslike Stockship and KO-Captain that increasedshipment tracking accuracy by 35% and improved data processing speed by 40%. Expert in Flutter UI/UX, REST API integration, and state management with Provider and GetX. Proven ability to deliver production-ready solutions in fast-paced, team-driven environments.");
-        const jd = prompt("Paste JD summary:", "We are looking for enthusiastic Flutter Trainees who are eager to learn and build their career in mobile app development. You will work closely with our development team, gain hands-on experience, and get exposure to real-time projects.");
-        const company = prompt("Company:", "Hacker Kernel");
-        const role = prompt("Role:", "Flutter Trainee");
-        const extra = prompt("Extra instructions (optional):", "");
+        // const resume = prompt("Paste resume summary:", "Flutter and MERN stack developer skilled in building high-performance mobile and web apps. Delivered projectslike Stockship and KO-Captain that increasedshipment tracking accuracy by 35% and improved data processing speed by 40%. Expert in Flutter UI/UX, REST API integration, and state management with Provider and GetX. Proven ability to deliver production-ready solutions in fast-paced, team-driven environments.");
+        // const jd = prompt("Paste JD summary:", "We are looking for enthusiastic Flutter Trainees who are eager to learn and build their career in mobile app development. You will work closely with our development team, gain hands-on experience, and get exposure to real-time projects.");
+        // const company = prompt("Company:", "Hacker Kernel");
+        // const role = prompt("Role:", "Flutter Trainee");
+        // const extra = prompt("Extra instructions (optional):", "");
+
+        const resume = "Flutter and MERN stack developer skilled in building high-performance mobile and web apps. Delivered projectslike Stockship and KO-Captain that increasedshipment tracking accuracy by 35% and improved data processing speed by 40%. Expert in Flutter UI/UX, REST API integration, and state management with Provider and GetX. Proven ability to deliver production-ready solutions in fast-paced, team-driven environments.";
+        const jd = "We are looking for enthusiastic Flutter Trainees who are eager to learn and build their career in mobile app development. You will work closely with our development team, gain hands-on experience, and get exposure to real-time projects.";
+        const company = "Hacker Kernel";
+        const role = "Flutter Trainee";
+        const extra = "";
 
         const resp = await fetch(`${API_BASE}/session/init`, {
           method: "POST",
@@ -236,7 +272,7 @@
 
         const data = await resp.json();
         console.log("Session init:", data);
-        if (data.status !== "ok") {
+        if (data.status !== "session_initialized") {
           alert("Session initialization failed.");
         }
     }, 500);
@@ -260,8 +296,19 @@
     wsSTT.onmessage = (evt) => {
       const text = evt.data.trim();
       if (!text) return;
-      lastTranscript = text;
-      sttBox.textContent = text;
+
+      // Accumulate STT fragments while guarding against duplicate/superset repeats
+      if (!lastTranscript) {
+        lastTranscript = text;
+      } else if (text.startsWith(lastTranscript)) {
+        // New chunk contains the previous buffer (superset) → replace
+        lastTranscript = text;
+      } else if (lastTranscript.endsWith(text) || lastTranscript === text) {
+        // Exact or suffix repeat → ignore
+      } else {
+        lastTranscript = `${lastTranscript} ${text}`.trim();
+      }
+      sttBox.textContent = lastTranscript;
     };
 
     wsSTT.onclose = () => {
@@ -272,11 +319,20 @@
 
   connectSTT();
 
+  // Allow manual clearing/editing of transcript
+  clearSttBtn.onclick = () => {
+    lastTranscript = "";
+    sttBox.textContent = "";
+  };
+
 
   // -------------------------------
   // SEND QUESTION -> AI ANSWER STREAM
   // -------------------------------
   answerBtn.onclick = () => {
+    // Always read the latest edited transcript
+    lastTranscript = sttBox.textContent.trim();
+
     if (!lastTranscript) {
       alert("No transcript available yet.");
       return;
