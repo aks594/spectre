@@ -15,10 +15,20 @@ SessionProvider = Callable[[], Optional[SessionState]]
 _SESSION_PROVIDER: Optional[SessionProvider] = None
 
 SUMMARY_PROMPT = """
-You receive an interviewer question and must rewrite it as a short, direct summary
-(1 tight sentence, max 30 words). Keep the intent intact, no filler.
-Question:
+You are rephrasing an interviewer's question to make it clearer and more concise.
+
+RULES:
+- Output ONLY the rephrased question (not the answer)
+- Keep it as a question (end with "?" if appropriate)
+- Remove filler words, repetitions, and stutters
+- Keep the core intent and meaning intact
+- Maximum 25 words
+- Do NOT answer the question, just rephrase it
+
+Original interviewer question:
 "{question}"
+
+Rephrased question:
 """
 
 def set_session_provider(provider: SessionProvider) -> None:

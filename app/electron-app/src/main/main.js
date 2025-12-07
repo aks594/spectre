@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, net } = require('electron');
+const koffi = require('koffi');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -29,6 +30,18 @@ const sendToWindow = (targetWindow, channel, payload) => {
     return;
   }
   targetWindow.webContents.send(channel, payload);
+};
+
+const setWindowHiddenFromCapture = (browserWindow) => {
+  const user32 = koffi.load('user32.dll');
+  const SetWindowDisplayAffinity = user32.func('bool SetWindowDisplayAffinity(intptr_t hWnd, uint32_t dwAffinity)');
+  const handle = browserWindow.getNativeWindowHandle();
+  if (!Buffer.isBuffer(handle)) {
+    console.error('Window handle is not a Buffer');
+    return;
+  }
+  const hWnd = process.arch === 'x64' ? handle.readBigInt64LE(0) : handle.readInt32LE(0);
+  SetWindowDisplayAffinity(hWnd, 0x00000011);
 };
 
 const resolveWebSocketImpl = () => {
@@ -261,6 +274,8 @@ const createHudWindow = () => {
   hudWindow.setMenuBarVisibility(false);
   hudWindow.loadURL(HUD_WINDOW_WEBPACK_ENTRY);
 
+  setWindowHiddenFromCapture(hudWindow);
+
   // --- MAGIC SAUCE: Click-through Transparency ---
   // This lets you click on the screen BEHIND the empty parts of the HUD
   hudWindow.webContents.on('did-finish-load', () => {
@@ -309,6 +324,9 @@ const createBrainWindow = () => {
   brainWindow.setMenuBarVisibility(false);
   brainWindow.setAlwaysOnTop(true, 'screen-saver');
   brainWindow.loadURL(BRAIN_WINDOW_WEBPACK_ENTRY);
+
+  setWindowHiddenFromCapture(brainWindow);
+
   brainWindow.on('closed', () => {
     brainWindow = null;
   });
@@ -320,6 +338,7 @@ const ensureBrainWindowVisible = () => {
     createBrainWindow();
   }
   if (brainWindow) {
+    setWindowHiddenFromCapture(brainWindow);
     brainWindow.show();
     brainWindow.focus();
   }

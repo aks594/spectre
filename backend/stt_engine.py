@@ -28,7 +28,7 @@ DEVICE_SR = 48000          # native sample rate for that device
 TARGET_SR = 16000          # Whisper expects 16k
 
 WINDOW = 3.5               # seconds of rolling window
-SHIFT = WINDOW / 2         # half-overlap
+SHIFT = WINDOW * 0.75      # 75% shift = 25% overlap (reduced from 50% to minimize duplicates)
 MIN_RMS = 0.01             # silence threshold
 CHANNELS = 1
 
@@ -79,8 +79,11 @@ def push_to_backend(text: str):
 
 
 # ---------- AUDIO CALLBACK ----------
+# Track last transcription to avoid sending identical consecutive chunks
+last_transcription = ""
+
 def audio_callback(indata, frames, time_info, status):
-    global rolling_buffer
+    global rolling_buffer, last_transcription
 
     if status:
         print("[AUDIO STATUS]", status)
@@ -101,7 +104,13 @@ def audio_callback(indata, frames, time_info, status):
     text = transcribe_chunk_16k(resampled)
     if not text:
         return
-
+    
+    # Skip if identical to last transcription (exact duplicate)
+    text_normalized = text.strip().lower()
+    if text_normalized == last_transcription:
+        return
+    
+    last_transcription = text_normalized
     print(f"\n[STT] {text}")
     push_to_backend(text)
 

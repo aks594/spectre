@@ -65,11 +65,31 @@ const normalizeText = (value) => value.replace(/\s+/g, ' ').trim();
 
 const findOverlap = (existing, incoming) => {
   const max = Math.min(existing.length, incoming.length);
-  for (let len = max; len > 0; len -= 1) {
-    if (existing.slice(-len) === incoming.slice(0, len)) {
+  const existingLower = existing.toLowerCase();
+  const incomingLower = incoming.toLowerCase();
+  
+  // First try exact case-insensitive character match
+  for (let len = max; len > 3; len -= 1) {
+    if (existingLower.slice(-len) === incomingLower.slice(0, len)) {
       return len;
     }
   }
+  
+  // Then try word-level overlap (more aggressive)
+  const existingWords = existing.trim().split(/\s+/);
+  const incomingWords = incoming.trim().split(/\s+/);
+  const maxWords = Math.min(existingWords.length, incomingWords.length);
+  
+  for (let wordCount = maxWords; wordCount >= 3; wordCount -= 1) {
+    const existingTail = existingWords.slice(-wordCount).join(' ').toLowerCase();
+    const incomingHead = incomingWords.slice(0, wordCount).join(' ').toLowerCase();
+    
+    if (existingTail === incomingHead) {
+      // Return character length of the overlap
+      return incoming.split(/\s+/).slice(0, wordCount).join(' ').length;
+    }
+  }
+  
   return 0;
 };
 
@@ -79,8 +99,12 @@ const collapseWordRepeats = (text) => text.replace(/\b(\w+)(\s+\1\b)+/gi, '$1');
 
 const collapsePhraseRepeats = (text) => {
   let next = text;
-  for (let iteration = 0; iteration < 2; iteration += 1) {
+  // Run multiple passes to catch nested repetitions
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    // Match 4+ word phrases that repeat
     next = next.replace(/(\b[\w']+\b(?:\s+\b[\w']+\b){3,})\s+\1/gi, '$1');
+    // Match 3-word phrases that repeat (more aggressive)
+    next = next.replace(/(\b[\w']+\b(?:\s+\b[\w']+\b){2})\s+\1/gi, '$1');
   }
   return next;
 };
@@ -155,13 +179,24 @@ const buildCleanedQuestion = (rawTranscript) => {
   if (!working) {
     return '';
   }
+  // First pass: remove basic duplicates
   working = stripFillers(working);
   working = collapseWordRepeats(working);
+  
+  // Second pass: aggressive phrase deduplication
   working = collapsePhraseRepeats(working);
   working = removeOverlappingSegments(working);
+  
+  // Third pass: remove sentence-level duplicates
   working = collapseRepeatedClauses(working);
+  
+  // Fourth pass: normalize and extract the actual question
   working = normalizeText(working);
   working = extractLikelyQuestion(working);
+  
+  // Final cleanup: one more word-level dedup in case fragments remain
+  working = collapseWordRepeats(working);
+  
   if (working.length > 320) {
     working = working.slice(-320);
   }
