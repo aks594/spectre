@@ -171,6 +171,7 @@ const buildCleanedQuestion = (rawTranscript) => {
 const initHud = () => {
   setupMouseEvents();
   const transcriptEl = document.getElementById('transcript');
+  const logPanel = document.getElementById('log-content');
   const statusDot = document.getElementById('ws-status-dot');
   const statusLabel = document.getElementById('ws-status-label');
   const answerButton = document.getElementById('answer-btn');
@@ -182,11 +183,19 @@ const initHud = () => {
   const moveRightButton = document.getElementById('move-right-btn');
   const exitButton = document.getElementById('exit-btn');
   const clearButton = document.getElementById('clear-transcript-btn');
+  const layoutTrigger = document.querySelector('.layout-trigger');
+  const layoutMenu = document.querySelector('.layout-menu');
   const toastEl = document.getElementById('hud-toast');
 
-  let transcriptBuffer = transcriptEl?.textContent?.trim() || '';
+  let transcriptBuffer = '';
   let hudWasListeningBeforeAnswer = true;
   let toastTimer;
+  
+  // Initialize transcript buffer from DOM
+  if (transcriptEl) {
+    const initialText = transcriptEl.textContent?.trim() || '';
+    transcriptBuffer = (initialText === 'Waiting for transcript...') ? '' : initialText;
+  }
 
   const stateLabels = {
     connecting: 'Connecting...',
@@ -194,6 +203,17 @@ const initHud = () => {
     disconnected: 'Disconnected',
     error: 'Connection Error',
   };
+
+  const updateAnswerButtonState = () => {
+    if (!answerButton) return;
+    const hasTranscript = Boolean(transcriptBuffer && transcriptBuffer.trim() && transcriptBuffer !== 'Waiting for transcript...');
+    const shouldDisable = answerInProgress || !hasTranscript;
+    answerButton.disabled = shouldDisable;
+    answerButton.classList.toggle('is-disabled', shouldDisable);
+  };
+  
+  // Call immediately to set initial state
+  updateAnswerButtonState();
 
   const showToast = (message, variant = 'info') => {
     if (!toastEl || !message) {
@@ -246,11 +266,15 @@ const initHud = () => {
     if (!transcriptEl || !incoming) {
       return;
     }
-    if (transcriptBuffer === 'Waiting for transcript...') {
+    if (!transcriptBuffer || transcriptBuffer === 'Waiting for transcript...') {
       transcriptBuffer = '';
     }
     transcriptBuffer = appendTranscript(transcriptBuffer, incoming);
-    transcriptEl.textContent = transcriptBuffer;
+    transcriptEl.textContent = transcriptBuffer || 'Waiting for transcript...';
+    if (logPanel) {
+      logPanel.textContent = transcriptBuffer || 'Waiting for transcript...';
+    }
+    updateAnswerButtonState();
   };
 
   const extractChunkText = (payload) => {
@@ -331,8 +355,8 @@ const initHud = () => {
     transcriptEl?.removeAttribute('data-locked');
     transcriptEl?.setAttribute('aria-live', isListening ? 'polite' : 'off');
     if (answerButton) {
-      answerButton.disabled = false;
       answerButton.classList.remove('is-busy');
+      updateAnswerButtonState();
     }
   };
 
@@ -415,6 +439,17 @@ const initHud = () => {
     logHud('Hide HUD clicked');
   });
 
+  if (layoutTrigger && layoutMenu) {
+    layoutTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      layoutMenu.classList.toggle('is-open');
+    });
+    document.addEventListener('click', (e) => {
+      if (layoutMenu.contains(e.target) || layoutTrigger.contains(e.target)) return;
+      layoutMenu.classList.remove('is-open');
+    });
+  }
+
   scaleUpButton?.addEventListener('click', () => {
     window.electronAPI?.scaleUp?.();
     window.electronAPI?.syncBrainPosition?.();
@@ -442,8 +477,12 @@ const initHud = () => {
   clearButton?.addEventListener('click', () => {
     transcriptBuffer = '';
     if (transcriptEl) {
-      transcriptEl.textContent = '';
+      transcriptEl.textContent = 'Waiting for transcript...';
     }
+    if (logPanel) {
+      logPanel.textContent = 'Waiting for transcript...';
+    }
+    updateAnswerButtonState();
     logHud('Transcript cleared');
   });
 
@@ -453,6 +492,7 @@ const initHud = () => {
   });
 
   updateStopButton();
+  updateAnswerButtonState();
 };
 
 const initBrain = () => {
@@ -532,6 +572,7 @@ const initBrain = () => {
     if (!chunk) {
       return;
     }
+    console.log('[BRAIN] Question chunk received:', chunk);
     updateStream(questionEl, 'questionBuffer', chunk);
     setSectionState(questionStateEl, 'Summarising interviewer question...', 'active');
   });

@@ -6,7 +6,7 @@ if (require('electron-squirrel-startup')) {
 
 let hudWindow;
 let brainWindow;
-const HUD_BASE_WIDTH = 650;
+const HUD_BASE_WIDTH = 1200;
 const HUD_BASE_HEIGHT = 65;
 const BRAIN_GAP = 4;
 const ASK_WS_URL = 'ws://localhost:8000/ws/ask';
@@ -172,8 +172,31 @@ const connectSttStream = () => {
 const updateBrainPosition = () => {
   if (!hudWindow || !brainWindow) return;
   const [hudX, hudY] = hudWindow.getPosition();
-  const VISUAL_OFFSET = 70; // 60px visible pill + 10px gap
-  brainWindow.setPosition(Math.round(hudX), Math.round(hudY + VISUAL_OFFSET));
+  
+  // Calculate actual HUD content height dynamically
+  // Get the actual bounds of the HUD content from the renderer
+  hudWindow.webContents.executeJavaScript(`
+    (() => {
+      const shell = document.querySelector('.hud-shell');
+      return shell ? shell.getBoundingClientRect().height : 150;
+    })()
+  `).then((hudContentHeight) => {
+    // Add padding-top (12px) + small gap (10px)
+    const GAP = 10;
+    const brainY = hudY + 12 + Math.ceil(hudContentHeight) + GAP;
+    const brainX = hudX;
+    
+    if (brainWindow && !brainWindow.isDestroyed()) {
+      brainWindow.setPosition(brainX, brainY);
+    }
+  }).catch(() => {
+    // Fallback if JS execution fails
+    const brainY = hudY + 150;
+    const brainX = hudX;
+    if (brainWindow && !brainWindow.isDestroyed()) {
+      brainWindow.setPosition(brainX, brainY);
+    }
+  });
 };
 
 const scheduleBrainPositionUpdate = () => {
@@ -227,6 +250,7 @@ const createHudWindow = () => {
     transparent: true,
     alwaysOnTop: true,
     resizable: false,
+    movable: true,
     skipTaskbar: true,
     hasShadow: false, // Turn off default shadow, we use CSS shadow
     webPreferences: {
@@ -263,24 +287,27 @@ ipcMain.handle('exit-app', () => {
 });
 
 const createBrainWindow = () => {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const brainWidth = Math.floor(width * 0.7);
-  const brainHeight = Math.floor(height * 0.7);
+  const { height } = screen.getPrimaryDisplay().workAreaSize;
+  const brainWidth = Math.round(HUD_BASE_WIDTH * hudScale);
+  const brainHeight = Math.floor(height * 0.5);
 
   brainWindow = new BrowserWindow({
     width: brainWidth,
     height: brainHeight,
     show: false,
     frame: false,
-    transparent: false,
-    backgroundColor: '#1a1a1aE6',
-    resizable: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: false,
+    hasShadow: false,
+    skipTaskbar: true,
     webPreferences: {
       preload: BRAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
     },
   });
 
   brainWindow.setMenuBarVisibility(false);
+  brainWindow.setAlwaysOnTop(true, 'screen-saver');
   brainWindow.loadURL(BRAIN_WINDOW_WEBPACK_ENTRY);
   brainWindow.on('closed', () => {
     brainWindow = null;
@@ -450,6 +477,7 @@ const startAnswerStream = ({ transcript, cleanedQuestion, metadata }, WebSocketI
           ? eventOrData.toString('utf8')
           : '';
     const interpreted = interpretAskMessage(data);
+    console.log('[MAIN] WebSocket message interpreted:', interpreted);
     if (interpreted.type === 'summary' && interpreted.chunk) {
       sendToWindow(brainWindow, 'question-stream', { chunk: interpreted.chunk, sessionId });
       return;
@@ -501,8 +529,14 @@ const registerIpcHandlers = () => {
     if (!hudWindow) return;
     if (hudWindow.isVisible()) {
       hudWindow.hide();
+      if (brainWindow && !brainWindow.isDestroyed()) {
+        brainWindow.hide();
+      }
     } else {
       hudWindow.show();
+      if (brainWindow && !brainWindow.isDestroyed()) {
+        brainWindow.show();
+      }
     }
   });
 

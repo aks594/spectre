@@ -17,28 +17,22 @@
         </header>
 
         <main class="brain-content">
-          <section class="content-block question-block">
-            <div class="block-header">
-              <div class="block-meta">
-                <span class="block-label">Summarized question:</span>
-                <span class="block-kicker">Latest from interviewer</span>
-              </div>
-              <span id="question-status-chip" class="status-chip">Waiting</span>
+          <section class="content-block">
+            <div class="label-row">
+              <span class="icon">💬</span>
+              <span class="label">SUMMARIZED QUESTION</span>
             </div>
-            <div id="question-stream" class="stream-text question-text" role="log" aria-live="polite">
+            <div id="question-stream" class="text-content question-text" role="log" aria-live="polite">
               Waiting for interviewer question...
             </div>
           </section>
 
-          <section class="content-block answer-block">
-            <div class="block-header">
-              <div class="block-meta">
-                <span class="block-label">Answer</span>
-                <span class="block-kicker">Model response</span>
-              </div>
-              <span id="answer-status-chip" class="status-chip">Idle</span>
+          <section class="content-block">
+            <div class="label-row">
+              <span class="icon star-icon">⭐</span>
+              <span class="label answer-label">ANSWER</span>
             </div>
-            <div id="answer-stream" class="stream-text answer-text" role="log" aria-live="polite">
+            <div id="answer-stream" class="text-content answer-text" role="log" aria-live="polite">
               Awaiting model answer...
             </div>
           </section>
@@ -48,7 +42,6 @@
           <div id="brain-status" class="footer-status">Ready</div>
           <div class="footer-actions">
             <button id="copy-answer-btn" class="footer-btn">Copy answer</button>
-            <button id="copy-code-btn" class="footer-btn ghost-btn">Copy code</button>
           </div>
         </footer>
       </div>
