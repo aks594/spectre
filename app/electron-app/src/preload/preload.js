@@ -37,4 +37,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onAnswerComplete: (callback) => subscribe('answer-complete', callback),
   exitApp: () => ipcRenderer.invoke('exit-app'),
   setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
+  startResize: (direction) => ipcRenderer.send('start-resize', direction),
+  performResize: (payload) => ipcRenderer.invoke('perform-resize', payload),
 });

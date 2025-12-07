@@ -1,7 +1,9 @@
+/* Core variables */
 :root {
   color-scheme: dark;
-  --hud-width: 1200px;
+  --hud-width: 800px;
   --bg-shell: rgba(12, 12, 12, 0.9);
+  --glass-bg: rgba(15, 15, 17, 0.7);
   --panel: rgba(18, 20, 26, 0.92);
   --border-subtle: rgba(255, 255, 255, 0.14);
   --border-strong: rgba(255, 255, 255, 0.26);
@@ -13,6 +15,19 @@
   --font-family: "Sora", "Segoe UI", system-ui, sans-serif;
   --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.5);
 }
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+  cursor: ew-resize;
+}
+
+.resize-left { left: -6px; }
+.resize-right { right: -6px; }
 
 * { box-sizing: border-box; }
 
@@ -40,12 +55,13 @@ body { background: transparent !important; }
 }
 
 .brain-shell {
+  position: relative;
   width: min(var(--hud-width), 96vw);
   max-height: 92vh;
   background: var(--glass-bg);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: none;
   backdrop-filter: blur(32px);
   display: flex;
   flex-direction: column;
@@ -220,21 +236,6 @@ body { background: transparent !important; }
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-
-:root {
-  color-scheme: dark;
-  --hud-width: 1200px;
-  --glass-bg: rgba(15, 15, 17, 0.70);
-  --border-subtle: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.26);
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --accent: #4f9bff;
-  --accent-2: #3bd16f;
-  --mono: "IBM Plex Mono", "JetBrains Mono", monospace;
-  --font-family: "Sora", "Segoe UI", system-ui, sans-serif;
-  --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.5);
-}
 .answer-label {
   color: #fbbf24;
 }
@@ -316,6 +317,6 @@ body { background: transparent !important; }
 
 @media (max-width: 1024px) {
   :root {
-    --hud-width: 840px;
+    --hud-width: 800px;
   }
 }

@@ -1,17 +1,41 @@
-// Add this helper to manage click-through
+// Ensure the HUD is always interactive/draggable.
 const setupMouseEvents = () => {
-  const shell = document.querySelector('.hud-shell');
-  if (!shell) return;
-
-  shell.addEventListener('mouseenter', () => {
-    // When mouse is over the HUD, stop ignoring mouse events (enable clicking)
+  if (window?.electronAPI?.setIgnoreMouseEvents) {
     window.electronAPI.setIgnoreMouseEvents(false);
-  });
+  }
+};
 
-  shell.addEventListener('mouseleave', () => {
-    // When mouse leaves HUD, ignore mouse events (let clicks pass through to desktop)
-    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-  });
+// Wire custom resize handles to send delta updates to main.
+const setupResizeHandles = () => {
+  const leftHandle = document.getElementById('resize-left');
+  const rightHandle = document.getElementById('resize-right');
+
+  const wire = (direction, element) => {
+    if (!element) return;
+    let lastX = 0;
+
+    const onMouseMove = (event) => {
+      const deltaX = event.clientX - lastX;
+      lastX = event.clientX;
+      window.electronAPI?.performResize?.({ direction, deltaX });
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    element.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      lastX = event.clientX;
+      window.electronAPI?.startResize?.(direction);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  };
+
+  wire('left', leftHandle);
+  wire('right', rightHandle);
 };
 
 const TRANSCRIPT_MAX_LENGTH = 700;
@@ -205,6 +229,7 @@ const buildCleanedQuestion = (rawTranscript) => {
 
 const initHud = () => {
   setupMouseEvents();
+  setupResizeHandles();
   const transcriptEl = document.getElementById('transcript');
   const logPanel = document.getElementById('log-content');
   const statusDot = document.getElementById('ws-status-dot');
@@ -222,15 +247,29 @@ const initHud = () => {
   const layoutMenu = document.querySelector('.layout-menu');
   const toastEl = document.getElementById('hud-toast');
 
-  let transcriptBuffer = '';
+  const PLACEHOLDER = 'Waiting for transcript...';
   let hudWasListeningBeforeAnswer = true;
   let toastTimer;
-  
-  // Initialize transcript buffer from DOM
-  if (transcriptEl) {
-    const initialText = transcriptEl.textContent?.trim() || '';
-    transcriptBuffer = (initialText === 'Waiting for transcript...') ? '' : initialText;
-  }
+
+  const setTranscriptContent = (text) => {
+    const safeText = typeof text === 'string' ? text : '';
+    const trimmed = safeText.trim();
+    const display = trimmed ? safeText : PLACEHOLDER;
+    if (transcriptEl) {
+      transcriptEl.innerText = display;
+    }
+    if (logPanel) {
+      logPanel.textContent = display;
+    }
+  };
+
+  const getTranscriptText = () => {
+    if (!transcriptEl) return '';
+    const raw = transcriptEl.innerText || '';
+    const trimmed = raw.trim();
+    if (trimmed === PLACEHOLDER) return '';
+    return trimmed;
+  };
 
   const stateLabels = {
     connecting: 'Connecting...',
@@ -241,13 +280,16 @@ const initHud = () => {
 
   const updateAnswerButtonState = () => {
     if (!answerButton) return;
-    const hasTranscript = Boolean(transcriptBuffer && transcriptBuffer.trim() && transcriptBuffer !== 'Waiting for transcript...');
+    const currentTranscript = getTranscriptText();
+    const hasTranscript = Boolean(currentTranscript);
     const shouldDisable = answerInProgress || !hasTranscript;
     answerButton.disabled = shouldDisable;
     answerButton.classList.toggle('is-disabled', shouldDisable);
   };
-  
-  // Call immediately to set initial state
+
+  // Initialize transcript from DOM and set initial button state
+  const initialText = transcriptEl?.innerText?.trim() || '';
+  setTranscriptContent(initialText === PLACEHOLDER ? '' : initialText);
   updateAnswerButtonState();
 
   const showToast = (message, variant = 'info') => {
@@ -301,14 +343,10 @@ const initHud = () => {
     if (!transcriptEl || !incoming) {
       return;
     }
-    if (!transcriptBuffer || transcriptBuffer === 'Waiting for transcript...') {
-      transcriptBuffer = '';
-    }
-    transcriptBuffer = appendTranscript(transcriptBuffer, incoming);
-    transcriptEl.textContent = transcriptBuffer || 'Waiting for transcript...';
-    if (logPanel) {
-      logPanel.textContent = transcriptBuffer || 'Waiting for transcript...';
-    }
+    const current = getTranscriptText();
+    const next = appendTranscript(current, incoming);
+    setTranscriptContent(next);
+    transcriptEl.scrollLeft = transcriptEl.scrollWidth;
     updateAnswerButtonState();
   };
 
@@ -414,13 +452,17 @@ const initHud = () => {
     showToast('Answer ready.', 'success');
   });
 
+  transcriptEl?.addEventListener('input', () => {
+    updateAnswerButtonState();
+  });
+
   answerButton?.addEventListener('click', async () => {
     if (answerInProgress) {
       logHud('Answer already in progress.');
       showToast('Answer already in progress.', 'warning');
       return;
     }
-    const frozenTranscript = transcriptBuffer.trim();
+    const frozenTranscript = getTranscriptText();
     if (!frozenTranscript) {
       logHud('No transcript captured yet.');
       showToast('No transcript captured yet.', 'warning');
@@ -510,13 +552,7 @@ const initHud = () => {
   });
 
   clearButton?.addEventListener('click', () => {
-    transcriptBuffer = '';
-    if (transcriptEl) {
-      transcriptEl.textContent = 'Waiting for transcript...';
-    }
-    if (logPanel) {
-      logPanel.textContent = 'Waiting for transcript...';
-    }
+    setTranscriptContent('');
     updateAnswerButtonState();
     logHud('Transcript cleared');
   });
@@ -531,6 +567,7 @@ const initHud = () => {
 };
 
 const initBrain = () => {
+  setupResizeHandles();
   const closeButton = document.getElementById('close-brain-btn');
   const statusEl = document.getElementById('brain-status');
   const questionEl = document.getElementById('question-stream');

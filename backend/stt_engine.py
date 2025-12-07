@@ -22,22 +22,34 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 API_BASE = os.getenv("INTERVIEWAI_API_BASE", "http://127.0.0.1:8000")
 
 
-# ---------- AUDIO CONFIG ----------
-DEVICE_INDEX = 16          # Stereo Mix (Realtek), WASAPI (from your query_devices)
-DEVICE_SR = 48000          # native sample rate for that device
-TARGET_SR = 16000          # Whisper expects 16k
+# ---------- AUDIO CONFIG (DYNAMIC) ----------
+def find_stereo_mix_index():
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        # Look for "Stereo Mix" and ensure it supports input channels (>0)
+        # You can also check for "Windows WASAPI" in dev['hostapi'] if needed
+        if "Stereo Mix" in dev['name'] and dev['max_input_channels'] > 0:
+            return i, int(dev['default_samplerate'])
+    return None, 48000
 
-WINDOW = 3.5               # seconds of rolling window
-SHIFT = WINDOW * 0.75      # 75% shift = 25% overlap (reduced from 50% to minimize duplicates)
-MIN_RMS = 0.01             # silence threshold
+# Auto-detect index
+DEVICE_INDEX, DEVICE_SR = find_stereo_mix_index()
+
+if DEVICE_INDEX is None:
+    print("❌ Error: 'Stereo Mix' not found. Please enable it in Windows Sound Settings.")
+    # Fallback or exit
+    DEVICE_INDEX = 1  # Try a safe default or raise error
+else:
+    print(f"✔ Found 'Stereo Mix' at Index {DEVICE_INDEX} ({DEVICE_SR} Hz)")
+
+TARGET_SR = 16000
+WINDOW = 3.5
+SHIFT = WINDOW * 0.75
+MIN_RMS = 0.01
 CHANNELS = 1
 
 rolling_buffer = np.zeros(int(DEVICE_SR * WINDOW), dtype=np.float32)
-shift_samples = int(DEVICE_SR * SHIFT)
-
-print(f"🎤 STT engine using device {DEVICE_INDEX} @ {DEVICE_SR} Hz")
-print(f"Backend API base: {API_BASE}")
-print("Starting STT engine...\n")
+shift_samples = max(1, int(DEVICE_SR * SHIFT))
 
 
 # ---------- HELPERS ----------

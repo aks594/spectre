@@ -7,13 +7,13 @@ if (require('electron-squirrel-startup')) {
 
 let hudWindow;
 let brainWindow;
-const HUD_BASE_WIDTH = 1200;
-const HUD_BASE_HEIGHT = 65;
+const HUD_BASE_WIDTH = 800;
+// Give the HUD ample height so all rows and dropdowns fit without clipping.
+const HUD_BASE_HEIGHT = 220;
 const BRAIN_GAP = 4;
 const ASK_WS_URL = 'ws://localhost:8000/ws/ask';
 const STT_WS_URL = process.env.INTERVIEWAI_STT_WS || 'ws://localhost:8000/ws/stt';
 let hudScale = 1;
-let hudSyncTimer;
 let hudListeningState = true;
 let answerInProgress = false;
 let activeAnswerSocket = null;
@@ -24,6 +24,7 @@ let sttKeepaliveTimer = null;
 let currentSttState = 'disconnected';
 let sttSequence = 0;
 let CachedWebSocketImpl;
+let isResizing = false;
 
 const sendToWindow = (targetWindow, channel, payload) => {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -183,39 +184,21 @@ const connectSttStream = () => {
 };
 
 const updateBrainPosition = () => {
-  if (!hudWindow || !brainWindow) return;
-  const [hudX, hudY] = hudWindow.getPosition();
-  
-  // Calculate actual HUD content height dynamically
-  // Get the actual bounds of the HUD content from the renderer
-  hudWindow.webContents.executeJavaScript(`
-    (() => {
-      const shell = document.querySelector('.hud-shell');
-      return shell ? shell.getBoundingClientRect().height : 150;
-    })()
-  `).then((hudContentHeight) => {
-    // Add padding-top (12px) + small gap (10px)
-    const GAP = 10;
-    const brainY = hudY + 12 + Math.ceil(hudContentHeight) + GAP;
-    const brainX = hudX;
-    
-    if (brainWindow && !brainWindow.isDestroyed()) {
-      brainWindow.setPosition(brainX, brainY);
-    }
-  }).catch(() => {
-    // Fallback if JS execution fails
-    const brainY = hudY + 150;
-    const brainX = hudX;
-    if (brainWindow && !brainWindow.isDestroyed()) {
-      brainWindow.setPosition(brainX, brainY);
-    }
+  if (!hudWindow || hudWindow.isDestroyed()) {
+    return;
+  }
+  if (!brainWindow || brainWindow.isDestroyed()) {
+    return;
+  }
+  const hudBounds = hudWindow.getBounds();
+  const brainBounds = brainWindow.getBounds();
+  const dynamicGap = BRAIN_GAP;
+  brainWindow.setBounds({
+    x: hudBounds.x,
+    y: hudBounds.y + hudBounds.height + dynamicGap,
+    width: hudBounds.width,
+    height: brainBounds.height,
   });
-};
-
-const scheduleBrainPositionUpdate = () => {
-  if (!hudWindow || !brainWindow) return;
-  clearTimeout(hudSyncTimer);
-  hudSyncTimer = setTimeout(updateBrainPosition, 30);
 };
 
 // const createHudWindow = () => {
@@ -249,8 +232,8 @@ const scheduleBrainPositionUpdate = () => {
 
 const createHudWindow = () => {
   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
-  // Make height LARGE (400px) so menus can drop down without clipping
-  const height = 400; 
+  // Use the base height for full HUD visibility
+  const height = HUD_BASE_HEIGHT;
   const targetWidth = Math.round(HUD_BASE_WIDTH * hudScale);
   const x = Math.max(0, Math.floor((screenWidth - targetWidth) / 2));
 
@@ -262,7 +245,7 @@ const createHudWindow = () => {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     movable: true,
     skipTaskbar: true,
     hasShadow: false, // Turn off default shadow, we use CSS shadow
@@ -279,7 +262,7 @@ const createHudWindow = () => {
   // --- MAGIC SAUCE: Click-through Transparency ---
   // This lets you click on the screen BEHIND the empty parts of the HUD
   hudWindow.webContents.on('did-finish-load', () => {
-    hudWindow.setIgnoreMouseEvents(true, { forward: true });
+    hudWindow.setIgnoreMouseEvents(false);
   });
 
   // Listen for mouse events from Renderer to enable/disable clicking
@@ -289,8 +272,30 @@ const createHudWindow = () => {
   });
   // -----------------------------------------------
 
-  hudWindow.on('move', scheduleBrainPositionUpdate);
-  hudWindow.on('resize', scheduleBrainPositionUpdate);
+  hudWindow.on('move', updateBrainPosition);
+  hudWindow.on('resize', () => {
+    if (!brainWindow || brainWindow.isDestroyed()) {
+      return;
+    }
+    if (isResizing) {
+      updateBrainPosition();
+      return;
+    }
+    isResizing = true;
+    try {
+      const { width } = hudWindow.getBounds();
+      const brainBounds = brainWindow.getBounds();
+      brainWindow.setBounds({
+        x: brainBounds.x,
+        y: brainBounds.y,
+        width,
+        height: brainBounds.height,
+      });
+      updateBrainPosition();
+    } finally {
+      isResizing = false;
+    }
+  });
   hudWindow.on('closed', () => {
     hudWindow = null;
   });
@@ -313,7 +318,7 @@ const createBrainWindow = () => {
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
-    resizable: false,
+    resizable: true,
     hasShadow: false,
     skipTaskbar: true,
     webPreferences: {
@@ -329,6 +334,29 @@ const createBrainWindow = () => {
 
   brainWindow.on('closed', () => {
     brainWindow = null;
+  });
+  brainWindow.on('resize', () => {
+    if (!hudWindow || hudWindow.isDestroyed()) {
+      return;
+    }
+    if (isResizing) {
+      updateBrainPosition();
+      return;
+    }
+    isResizing = true;
+    try {
+      const { width } = brainWindow.getBounds();
+      const hudBounds = hudWindow.getBounds();
+      hudWindow.setBounds({
+        x: hudBounds.x,
+        y: hudBounds.y,
+        width,
+        height: hudBounds.height,
+      });
+      updateBrainPosition();
+    } finally {
+      isResizing = false;
+    }
   });
   updateBrainPosition();
 };
@@ -532,6 +560,48 @@ const startAnswerStream = ({ transcript, cleanedQuestion, metadata }, WebSocketI
 };
 
 const registerIpcHandlers = () => {
+  ipcMain.on('start-resize', () => {
+    // Placeholder hook to align with renderer handshake; actual sizing is handled in perform-resize.
+  });
+
+  ipcMain.handle('perform-resize', (event, payload = {}) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWindow || senderWindow.isDestroyed()) {
+      return;
+    }
+    const direction = payload.direction === 'left' ? 'left' : 'right';
+    const deltaX = Number(payload.deltaX) || 0;
+    if (!deltaX) {
+      return;
+    }
+
+    const bounds = senderWindow.getBounds();
+    const minWidth = 320;
+
+    let nextWidth = bounds.width;
+    let nextX = bounds.x;
+
+    if (direction === 'left') {
+      nextWidth = Math.max(minWidth, bounds.width - deltaX);
+      nextX = bounds.x + (bounds.width - nextWidth);
+    } else {
+      nextWidth = Math.max(minWidth, bounds.width + deltaX);
+    }
+
+    isResizing = true;
+    try {
+      senderWindow.setBounds({
+        x: nextX,
+        y: bounds.y,
+        width: nextWidth,
+        height: bounds.height,
+      });
+      updateBrainPosition();
+    } finally {
+      isResizing = false;
+    }
+  });
+
   ipcMain.handle('open-brain', () => {
     if (!brainWindow) return;
     updateBrainPosition();
@@ -592,7 +662,7 @@ const registerIpcHandlers = () => {
   ipcMain.handle('start-answer', async (_event, payload = {}) => {
     const transcript = (payload?.transcript || '').trim();
     const cleanedQuestion = (payload?.cleanedQuestion || '').trim();
-      const metadata = payload && typeof payload.metadata === 'object' && payload.metadata !== null
+    const metadata = payload && typeof payload.metadata === 'object' && payload.metadata !== null
       ? { ...payload.metadata }
       : {};
     if (!metadata.session_id) {
@@ -684,3 +754,4 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+

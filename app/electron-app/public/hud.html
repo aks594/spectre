@@ -10,9 +10,11 @@
     <input type="checkbox" id="hud-toggle" class="state-toggle" aria-hidden="true">
     <input type="checkbox" id="layout-toggle" class="state-toggle" aria-hidden="true">
     <input type="checkbox" id="log-toggle" class="state-toggle" aria-hidden="true">
-    
+
     <div class="hud-viewport">
       <div class="hud-shell">
+        <div class="resize-handle resize-left" id="resize-left"></div>
+        <div class="resize-handle resize-right" id="resize-right"></div>
         <!-- Row 1: Brand, Hide, 3-dot | Stop/Resume, Exit -->
         <div class="hud-row row-1">
           <div class="row1-left">
@@ -40,13 +42,6 @@
                     <button id="move-right-btn" class="chip-btn" aria-label="Move HUD right">&rarr;</button>
                   </div>
                 </div>
-                <!-- <div class="menu-row">
-                  <span class="menu-label">Scale</span>
-                  <div class="menu-actions">
-                    <button id="scale-down-btn" class="chip-btn" aria-label="Scale HUD down">-</button>
-                    <button id="scale-up-btn" class="chip-btn" aria-label="Scale HUD up">+</button>
-                  </div>
-                </div> -->
               </div>
             </div>
           </div>
@@ -58,7 +53,7 @@
 
         <!-- Row 2: Transcript | Hamburger, Clear -->
         <div class="hud-row row-2">
-          <div class="transcript" id="transcript" role="log" aria-live="polite">
+          <div class="transcript" id="transcript" role="log" aria-live="polite" contenteditable="true" spellcheck="false">
             Waiting for transcript...
           </div>
           <div class="row2-right">

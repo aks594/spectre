@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  --hud-width: 1200px;
+  --hud-width: 800px;
   --glass-bg: rgba(15, 15, 17, 0.70);
   --border-subtle: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.24);
@@ -13,8 +13,22 @@
   --font-sans: "Sora", "Segoe UI", system-ui, sans-serif;
 }
 
-* {
-  box-sizing: border-box;
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+  cursor: ew-resize;
+}
+
+.resize-left {
+  left: -6px;
+}
+
+.resize-right {
+  right: -6px;
 }
 
 .hud-body {
@@ -54,20 +68,9 @@
   -webkit-app-region: drag;
 }
 
-/* .hud-capsule {
-  width: 100%;
-  min-height: 70px;
-  padding: 8px 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: linear-gradient(120deg, rgba(16, 18, 22, 0.82), rgba(24, 26, 30, 0.78));
-  border: 1px solid var(--border-subtle);
-  border-radius: 50px;
-  box-shadow: var(--shadow-strong);
-  backdrop-filter: blur(16px);
-  -webkit-app-region: drag;
-} */
+.hud-shell {
+  box-shadow: none !important;
+}
 
 /* Row Structure */
 .hud-row {
@@ -335,8 +338,8 @@
   font-size: 14px;
   color: var(--text-main);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
@@ -344,6 +347,12 @@
   min-height: 36px;
   display: flex;
   align-items: center;
+  cursor: text;
+}
+
+.transcript::-webkit-scrollbar { display: none; }
+.transcript {
+  scrollbar-width: none;
 }
 
 .transcript[data-locked="true"] {
