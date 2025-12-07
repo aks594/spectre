@@ -2,18 +2,18 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Generator
 
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY not set in .env")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY not set in .env")
 
-genai.configure(api_key=GEMINI_API_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY)
 
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 
 # ---------- SESSION STATE ----------
@@ -41,33 +41,6 @@ class SessionState:
 
 # ---------- HELPER: SUMMARIZATION ----------
 
-def _extract_response_text(resp) -> str:
-    """Safely gather text from Gemini responses even when `.text` is missing."""
-    if resp is None:
-        return ""
-
-    candidates = getattr(resp, "candidates", []) or []
-    for candidate in candidates:
-        finish_reason = getattr(candidate, "finish_reason", 0)
-        if finish_reason == 2:  # SAFETY
-            continue
-        content = getattr(candidate, "content", None)
-        parts = getattr(content, "parts", []) if content else []
-        text_chunks: List[str] = []
-        for part in parts:
-            part_text = getattr(part, "text", None)
-            if part_text:
-                text_chunks.append(part_text)
-        if text_chunks:
-            return "".join(text_chunks).strip()
-
-    try:  # fallback to built-in accessor in case it becomes available later
-        text_value = resp.text
-    except Exception:
-        text_value = ""
-    return (text_value or "").strip()
-
-
 def _summarize_text(raw_text: str, purpose: str) -> str:
     """Generic summarizer for JD / resume."""
     if not raw_text.strip():
@@ -86,12 +59,13 @@ Task:
 - Focus only on information that is relevant for interview answers.
 - Output plain text bullets, no extra commentary.
 """
-    model = genai.GenerativeModel(MODEL_NAME)
-    resp = model.generate_content(
-        prompt,
-        generation_config={"temperature": 0.2, "max_output_tokens": 300},
+    resp = groq_client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=300,
     )
-    return _extract_response_text(resp)
+    return resp.choices[0].message.content
 
 
 def summarize_resume(raw_resume: str) -> str:
@@ -171,43 +145,20 @@ def stream_answer(session: SessionState, question: str) -> Generator[str, None, 
     At the end, the full answer is returned as the generator's return value.
     """
     prompt = build_prompt(session, question)
-    model = genai.GenerativeModel(MODEL_NAME)
 
-    try:
-        stream = model.generate_content(
-            prompt,
-            stream=True,
-            generation_config={
-                "temperature": 0.3,
-                "max_output_tokens": 220,
-            },
-        )
-    except StopIteration:
-        stream = None
-    except Exception as exc:  # defensive: surface API errors with context
-        raise RuntimeError("Gemini streaming call failed") from exc
-
-    if stream is None:
-        response = model.generate_content(
-            prompt,
-            generation_config={
-                "temperature": 0.3,
-                "max_output_tokens": 220,
-            },
-        )
-        full_answer = _extract_response_text(response)
-        session.add_memory(question, full_answer)
-        if full_answer:
-            yield full_answer
-        return full_answer
+    stream = groq_client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=220,
+        stream=True,
+    )
 
     full_answer = ""
     for chunk in stream:
-        if not chunk.text:
-            continue
-        full_answer += chunk.text
-        yield chunk.text  # yield to UI / caller
-
+        if chunk.choices[0].delta.content:
+            full_answer += chunk.choices[0].delta.content
+            yield chunk.choices[0].delta.content  # yield to UI / caller
 
     # trim whitespace
     full_answer = full_answer.strip()

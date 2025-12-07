@@ -7,9 +7,8 @@ from typing import AsyncGenerator, Callable, Dict, Iterable, Optional, Tuple
 from llm_pipeline import (
     MODEL_NAME,
     SessionState,
-    _extract_response_text,
-    genai,
     stream_answer as sync_stream_answer,
+    groq_client,
 )
 
 SessionProvider = Callable[[], Optional[SessionState]]
@@ -64,12 +63,13 @@ async def generate_stream_summary(question_clean: str) -> AsyncGenerator[str, No
         return
 
     def _generate_summary() -> str:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(
-            SUMMARY_PROMPT.format(question=question),
-            generation_config={"temperature": 0.2, "max_output_tokens": 120},
+        response = groq_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": SUMMARY_PROMPT.format(question=question)}],
+            temperature=0.2,
+            max_tokens=120,
         )
-        return _extract_response_text(response)
+        return response.choices[0].message.content
 
     summary_text = await asyncio.to_thread(_generate_summary)
     if not summary_text:
