@@ -2,11 +2,11 @@ import os
 import time
 import io
 import wave
+import difflib
 import requests
 
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -20,6 +20,7 @@ if not GROQ_API_KEY:
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 API_BASE = os.getenv("INTERVIEWAI_API_BASE", "http://127.0.0.1:8000")
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "")  # empty -> auto-detect (better for Hinglish)
 
 
 # ---------- AUDIO CONFIG (DYNAMIC) ----------
@@ -43,10 +44,13 @@ else:
     print(f"✔ Found 'Stereo Mix' at Index {DEVICE_INDEX} ({DEVICE_SR} Hz)")
 
 TARGET_SR = 16000
-WINDOW = 3.5
-SHIFT = WINDOW * 0.75
-MIN_RMS = 0.01
+WINDOW = 3.2  # slightly longer window to reduce mid-sentence splits
+SHIFT = WINDOW * 0.55
+MIN_RMS = 0.015  # slightly stricter noise gate
 CHANNELS = 1
+
+MIN_WORDS = 2  # require some content to reduce noise snippets
+MIN_CHARS = 10
 
 rolling_buffer = np.zeros(int(DEVICE_SR * WINDOW), dtype=np.float32)
 shift_samples = max(1, int(DEVICE_SR * SHIFT))
@@ -66,6 +70,16 @@ def float_to_wav_bytes(chunk_float32: np.ndarray, sr: int) -> bytes:
     return buff.read()
 
 
+def fast_resample(mono_pcm: np.ndarray, orig_sr: int, target_sr: int, seconds: float) -> np.ndarray:
+    """Linear interpolation resample to avoid scipy overhead on short windows."""
+    target_len = int(target_sr * seconds)
+    if len(mono_pcm) == 0:
+        return np.zeros(target_len, dtype=np.float32)
+    x_old = np.linspace(0, 1, len(mono_pcm))
+    x_new = np.linspace(0, 1, target_len)
+    return np.interp(x_new, x_old, mono_pcm).astype(np.float32)
+
+
 def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
     wav_bytes = float_to_wav_bytes(chunk_16k, TARGET_SR)
     try:
@@ -73,7 +87,7 @@ def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
             file=("audio.wav", wav_bytes, "audio/wav"),
             model="whisper-large-v3",
             response_format="text",
-            language="en",
+            language=WHISPER_LANGUAGE or None,
         )
         return resp.strip()
     except Exception as e:
@@ -110,16 +124,25 @@ def audio_callback(indata, frames, time_info, status):
         return
 
     # Resample to 16k
-    resampled = resample(rolling_buffer, int(TARGET_SR * WINDOW))
+    resampled = fast_resample(rolling_buffer, DEVICE_SR, TARGET_SR, WINDOW)
 
     # Transcribe
     text = transcribe_chunk_16k(resampled)
     if not text:
         return
     
-    # Skip if identical to last transcription (exact duplicate)
+    # Content gating to drop very short/noisy fragments
+    words = text.strip().split()
+    if len(words) < MIN_WORDS and len(text.strip()) < MIN_CHARS:
+        return
+
+    # Skip near-duplicates to reduce backend noise
     text_normalized = text.strip().lower()
-    if text_normalized == last_transcription:
+    similarity = difflib.SequenceMatcher(None, text_normalized, last_transcription).ratio()
+    if similarity > 0.8:
+        # If new text isn't meaningfully longer, treat as duplicate noise
+        if len(text_normalized) <= len(last_transcription) + 4:
+            return
         return
     
     last_transcription = text_normalized

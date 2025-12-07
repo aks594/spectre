@@ -1,8 +1,11 @@
 import os
+import json
+import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Generator
+from typing import List, Dict, Generator, Optional
 
 from groq import Groq
+from tavily import TavilyClient
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,9 +14,49 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY not set in .env")
 
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+if not TAVILY_API_KEY:
+    raise RuntimeError("TAVILY_API_KEY not set in .env")
+
 groq_client = Groq(api_key=GROQ_API_KEY)
+tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
 
 MODEL_NAME = "llama-3.3-70b-versatile"
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for up-to-date technical information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to find relevant information."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }
+]
+
+
+# ---------- TOOL PARSING HELPERS ----------
+
+def extract_web_search_query(text: str) -> Optional[str]:
+    """Extract a web_search query from malformed tool markup in text."""
+    patterns = [
+        r"<function=web_search[^\n]*\{[^}]*\"query\"\s*:\s*\"([^\"]+)\"[^}]*\}[^<]*</function>",
+        r"<function=web_search[^\n]*\{[^}]*\"query\"\s*:\s*\"([^\"]+)\"[^}]*\}[^>]*/?>",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
+        if m:
+            return m.group(1)
+    return None
 
 
 # ---------- SESSION STATE ----------
@@ -95,6 +138,7 @@ Rules:
 - If relevant, briefly mention my experience or projects that make sense for the question.
 - If the question is behavioral, use STAR-style implicitly but do NOT say "STAR".
 - If the question is vague, assume the most common interview interpretation.
+- If you need up-to-date technical information or current documentation, use the web_search tool.
 """
 
 
@@ -139,16 +183,125 @@ Your answer (only the answer text, no meta, no explanation):
 # ---------- LLM ANSWER: STREAMING ----------
 
 def stream_answer(session: SessionState, question: str) -> Generator[str, None, str]:
-    """
-    Stream answer tokens for a given question.
-    Returns a generator yielding incremental text chunks.
-    At the end, the full answer is returned as the generator's return value.
-    """
+    """Stream answer tokens for a given question with tool-calling support."""
     prompt = build_prompt(session, question)
+    base_user_msg = {"role": "user", "content": prompt}
+    messages = [base_user_msg]
 
+    # Step 1: Initial call to check for tool calls
+    try:
+        response = groq_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.3,
+            max_tokens=220,
+        )
+        assistant_message = response.choices[0].message
+        tool_calls = assistant_message.tool_calls or []
+        content = assistant_message.content or ""
+    except Exception as e:
+        error_str = str(e)
+        query = extract_web_search_query(error_str)
+        if query:
+            print(f"🕵️ Searching (error path): {query}...")
+            search_results = tavily_client.search(query, search_depth="basic")
+            tool_content = json.dumps(search_results)
+
+            messages = [
+                base_user_msg,
+                {"role": "assistant", "content": error_str},
+                {"role": "tool", "tool_call_id": "error_parsed", "content": tool_content},
+            ]
+
+            stream = groq_client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=220,
+                stream=True,
+            )
+
+            full_answer = ""
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    full_answer += chunk.choices[0].delta.content
+                    yield chunk.choices[0].delta.content
+
+            full_answer = full_answer.strip()
+            session.add_memory(question, full_answer)
+            return full_answer
+        raise
+
+    # Branch: proper tool calls
+    if tool_calls:
+        tool_call = tool_calls[0]
+        args = json.loads(tool_call.function.arguments)
+        query = args.get("query", "")
+        print(f"🕵️ Searching: {query}...")
+        search_results = tavily_client.search(query, search_depth="basic")
+        tool_content = json.dumps(search_results)
+
+        messages = [
+            base_user_msg,
+            {"role": "assistant", "content": content, "tool_calls": tool_calls},
+            {"role": "tool", "tool_call_id": tool_call.id, "content": tool_content},
+        ]
+
+        stream = groq_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=220,
+            stream=True,
+        )
+
+        full_answer = ""
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                full_answer += chunk.choices[0].delta.content
+                yield chunk.choices[0].delta.content
+
+        full_answer = full_answer.strip()
+        session.add_memory(question, full_answer)
+        return full_answer
+
+    # Branch: malformed tool call embedded in content
+    query = extract_web_search_query(content)
+    if query:
+        print(f"🕵️ Searching (content path): {query}...")
+        search_results = tavily_client.search(query, search_depth="basic")
+        tool_content = json.dumps(search_results)
+
+        messages = [
+            base_user_msg,
+            {"role": "assistant", "content": content},
+            {"role": "tool", "tool_call_id": "content_parsed", "content": tool_content},
+        ]
+
+        stream = groq_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=220,
+            stream=True,
+        )
+
+        full_answer = ""
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                full_answer += chunk.choices[0].delta.content
+                yield chunk.choices[0].delta.content
+
+        full_answer = full_answer.strip()
+        session.add_memory(question, full_answer)
+        return full_answer
+
+    # Branch: no tools, stream normally
     stream = groq_client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         temperature=0.3,
         max_tokens=220,
         stream=True,
@@ -158,11 +311,9 @@ def stream_answer(session: SessionState, question: str) -> Generator[str, None, 
     for chunk in stream:
         if chunk.choices[0].delta.content:
             full_answer += chunk.choices[0].delta.content
-            yield chunk.choices[0].delta.content  # yield to UI / caller
+            yield chunk.choices[0].delta.content
 
-    # trim whitespace
     full_answer = full_answer.strip()
-    # update memory with this QA
     session.add_memory(question, full_answer)
     return full_answer
 
