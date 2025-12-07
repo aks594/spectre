@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, net } = require('electron');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -8,7 +8,7 @@ let hudWindow;
 let brainWindow;
 const HUD_BASE_WIDTH = 650;
 const HUD_BASE_HEIGHT = 65;
-const BRAIN_GAP = 8;
+const BRAIN_GAP = 4;
 const ASK_WS_URL = 'ws://localhost:8000/ws/ask';
 const STT_WS_URL = process.env.INTERVIEWAI_STT_WS || 'ws://localhost:8000/ws/stt';
 let hudScale = 1;
@@ -172,8 +172,8 @@ const connectSttStream = () => {
 const updateBrainPosition = () => {
   if (!hudWindow || !brainWindow) return;
   const [hudX, hudY] = hudWindow.getPosition();
-  const [, hudHeight] = hudWindow.getSize();
-  brainWindow.setPosition(Math.round(hudX), Math.round(hudY + hudHeight + BRAIN_GAP));
+  const VISUAL_OFFSET = 70; // 60px visible pill + 10px gap
+  brainWindow.setPosition(Math.round(hudX), Math.round(hudY + VISUAL_OFFSET));
 };
 
 const scheduleBrainPositionUpdate = () => {
@@ -182,14 +182,45 @@ const scheduleBrainPositionUpdate = () => {
   hudSyncTimer = setTimeout(updateBrainPosition, 30);
 };
 
+// const createHudWindow = () => {
+//   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+//   const targetWidth = Math.round(HUD_BASE_WIDTH * hudScale);
+//   const x = Math.max(0, Math.floor((screenWidth - targetWidth) / 2));
+
+//   hudWindow = new BrowserWindow({
+//     width: targetWidth,
+//     height: Math.round(HUD_BASE_HEIGHT * hudScale),
+//     x,
+//     y: 20,
+//     frame: false,
+//     transparent: true,
+//     alwaysOnTop: true,
+//     resizable: false,
+//     skipTaskbar: true,
+//     webPreferences: {
+//       preload: HUD_WINDOW_PRELOAD_WEBPACK_ENTRY,
+//     },
+//   });
+
+//   hudWindow.setMenuBarVisibility(false);
+//   hudWindow.loadURL(HUD_WINDOW_WEBPACK_ENTRY);
+//   hudWindow.on('move', scheduleBrainPositionUpdate);
+//   hudWindow.on('resize', scheduleBrainPositionUpdate);
+//   hudWindow.on('closed', () => {
+//     hudWindow = null;
+//   });
+// };
+
 const createHudWindow = () => {
   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+  // Make height LARGE (400px) so menus can drop down without clipping
+  const height = 400; 
   const targetWidth = Math.round(HUD_BASE_WIDTH * hudScale);
   const x = Math.max(0, Math.floor((screenWidth - targetWidth) / 2));
 
   hudWindow = new BrowserWindow({
     width: targetWidth,
-    height: Math.round(HUD_BASE_HEIGHT * hudScale),
+    height: height, // Changed from 65 to 400
     x,
     y: 20,
     frame: false,
@@ -197,6 +228,7 @@ const createHudWindow = () => {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
+    hasShadow: false, // Turn off default shadow, we use CSS shadow
     webPreferences: {
       preload: HUD_WINDOW_PRELOAD_WEBPACK_ENTRY,
     },
@@ -204,12 +236,31 @@ const createHudWindow = () => {
 
   hudWindow.setMenuBarVisibility(false);
   hudWindow.loadURL(HUD_WINDOW_WEBPACK_ENTRY);
+
+  // --- MAGIC SAUCE: Click-through Transparency ---
+  // This lets you click on the screen BEHIND the empty parts of the HUD
+  hudWindow.webContents.on('did-finish-load', () => {
+    hudWindow.setIgnoreMouseEvents(true, { forward: true });
+  });
+
+  // Listen for mouse events from Renderer to enable/disable clicking
+  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win.setIgnoreMouseEvents(ignore, options);
+  });
+  // -----------------------------------------------
+
   hudWindow.on('move', scheduleBrainPositionUpdate);
   hudWindow.on('resize', scheduleBrainPositionUpdate);
   hudWindow.on('closed', () => {
     hudWindow = null;
   });
 };
+
+// ADD THIS TO registerIpcHandlers():
+ipcMain.handle('exit-app', () => {
+  app.quit();
+});
 
 const createBrainWindow = () => {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
@@ -249,10 +300,10 @@ const ensureBrainWindowVisible = () => {
 
 const applyHudScale = () => {
   if (!hudWindow) return;
-  hudWindow.setSize(
-    Math.round(HUD_BASE_WIDTH * hudScale),
-    Math.round(HUD_BASE_HEIGHT * hudScale)
-  );
+  const width = Math.round(HUD_BASE_WIDTH * hudScale);
+  const height = Math.round(HUD_BASE_HEIGHT * hudScale);
+  const [x, y] = hudWindow.getPosition();
+  hudWindow.setBounds({ x, y, width, height });
   updateBrainPosition();
 };
 
@@ -488,9 +539,15 @@ const registerIpcHandlers = () => {
   ipcMain.handle('start-answer', async (_event, payload = {}) => {
     const transcript = (payload?.transcript || '').trim();
     const cleanedQuestion = (payload?.cleanedQuestion || '').trim();
-    const metadata = payload && typeof payload.metadata === 'object' && payload.metadata !== null
+      const metadata = payload && typeof payload.metadata === 'object' && payload.metadata !== null
       ? { ...payload.metadata }
       : {};
+    if (!metadata.session_id) {
+      metadata.session_id = `session-${Date.now()}`;
+    }
+    if (!metadata.timestamp) {
+      metadata.timestamp = Date.now();
+    }
     if (!transcript) {
       return { status: 'empty', message: 'Transcript is empty.' };
     }
@@ -519,9 +576,38 @@ const registerIpcHandlers = () => {
   });
 };
 
+const initBackendSession = () => {
+  try {
+    const request = net.request({
+      method: 'POST',
+      url: 'http://localhost:8000/session/init',
+    });
+    request.setHeader('Content-Type', 'application/json');
+    request.on('response', (response) => {
+      if (response.statusCode >= 400) {
+        console.error('[SESSION] init responded with', response.statusCode);
+      }
+    });
+    request.on('error', (error) => {
+      console.error('[SESSION] init failed', error.message || error);
+    });
+    const payload = {
+      resume_text: 'Auto',
+      jd_text: 'Auto',
+      company: 'General',
+      role: 'General',
+      extra_instructions: '',
+    };
+    request.end(JSON.stringify(payload));
+  } catch (error) {
+    console.error('[SESSION] init threw', error.message || error);
+  }
+};
+
 const bootstrap = () => {
   createHudWindow();
   createBrainWindow();
+  initBackendSession();
   registerIpcHandlers();
   connectSttStream();
 

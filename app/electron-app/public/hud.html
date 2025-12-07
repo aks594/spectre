@@ -6,33 +6,72 @@
     <link rel="stylesheet" href="hud.css">
   </head>
   <body class="hud-body">
+    <!-- Collapsed-state toggle lives outside the shell so CSS siblings can react -->
+    <input type="checkbox" id="hud-toggle" class="state-toggle" aria-hidden="true">
     <div class="hud-viewport">
       <div class="hud-shell">
         <div class="hud-capsule">
           <div class="hud-left">
-            <div class="hud-brand">
-              <span class="brand-glow" aria-hidden="true"></span>
-              <span class="brand-text">InterviewAI</span>
+            <!-- State Toggles (Checkbox Hack) -->
+            <input type="checkbox" id="layout-toggle" class="state-toggle" aria-hidden="true">
+            <input type="checkbox" id="log-toggle" class="state-toggle" aria-hidden="true">
+
+            <!-- Hidden element to satisfy renderer.js ID requirement without triggering window hide -->
+            <div id="hide-btn" style="display: none;"></div>
+
+            <div class="brand-chip" aria-label="Brand">
+              <span class="brand-mark" aria-hidden="true"></span>
+              <div class="brand-copy">
+                <span class="brand-title">InterviewAI</span>
+                <span class="brand-title-collapsed">InterviewAI</span>
+                <span class="brand-sub">Live assist</span>
+              </div>
             </div>
-            <button id="hide-btn" class="pill-btn ghost-btn collapse-toggle" aria-label="Hide HUD">Hide</button>
-            <button class="pill-btn ghost-btn collapse-show" aria-label="Show HUD">Show</button>
-            <button class="icon-btn layout-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Layout menu">
-              <span class="icon-dots" aria-hidden="true">···</span>
-            </button>
-            <div class="layout-menu hidden" role="menu">
-              <div class="menu-title">Layout</div>
-              <div class="menu-row">
-                <span class="menu-label">Position</span>
-                <div class="menu-actions">
-                  <button id="move-left-btn" class="chip-btn" aria-label="Move HUD left">&lt;</button>
-                  <button id="move-right-btn" class="chip-btn" aria-label="Move HUD right">&gt;</button>
+
+            <label for="hud-toggle" class="pill-btn ghost-btn collapse-toggle" role="button" aria-label="Hide HUD">Hide</label>
+            <label for="hud-toggle" class="pill-btn ghost-btn collapse-show" role="button" aria-label="Show HUD">Show</label>
+
+            <div class="menu-cluster">
+              <label for="layout-toggle" class="icon-btn layout-trigger" role="button" aria-haspopup="true" aria-label="Layout menu">
+                <span class="icon-dots" aria-hidden="true">···</span>
+              </label>
+              <div class="layout-menu" role="menu">
+                <div class="menu-title">Layout</div>
+                <div class="menu-row">
+                  <span class="menu-label">Position</span>
+                  <div class="menu-actions">
+                    <button id="move-left-btn" class="chip-btn" aria-label="Move HUD left">&larr;</button>
+                    <button id="move-right-btn" class="chip-btn" aria-label="Move HUD right">&rarr;</button>
+                  </div>
+                </div>
+                <div class="menu-row">
+                  <span class="menu-label">Scale</span>
+                  <div class="menu-actions">
+                    <button id="scale-down-btn" class="chip-btn" aria-label="Scale HUD down">-</button>
+                    <button id="scale-up-btn" class="chip-btn" aria-label="Scale HUD up">+</button>
+                  </div>
                 </div>
               </div>
-              <div class="menu-row">
-                <span class="menu-label">Scale</span>
-                <div class="menu-actions">
-                  <button id="scale-down-btn" class="chip-btn" aria-label="Scale HUD down">-</button>
-                  <button id="scale-up-btn" class="chip-btn" aria-label="Scale HUD up">+</button>
+            </div>
+
+            <div class="log-dropdown">
+              <label for="log-toggle" class="icon-btn log-trigger" role="button" aria-haspopup="true" aria-label="Transcript feed">
+                <span class="icon-equal" aria-hidden="true"></span>
+              </label>
+              <div class="log-panel" id="log-panel" aria-live="polite">
+                <div class="log-head">
+                  <div class="log-pill">System transcripts</div>
+                  <span class="log-hint">Hover to pin</span>
+                </div>
+                <div class="log-scroll">
+                  <div class="log-section">
+                    <div class="log-title">System Audio</div>
+                    <div class="log-lines" id="system-audio-log">Listening for system audio...</div>
+                  </div>
+                  <div class="log-section muted">
+                    <div class="log-title">Mic Audio</div>
+                    <div class="log-lines">Mic disabled</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -45,23 +84,7 @@
           </div>
 
           <div class="hud-right">
-            <div class="hud-timer" aria-label="Session timer">23 mins</div>
-            <div class="hud-status">
-              <div class="status-badge">
-                <span class="icon-screen" aria-hidden="true"></span>
-                <span class="status-indicator status-active" aria-hidden="true"></span>
-              </div>
-              <div class="status-badge muted">
-                <span class="icon-mic" aria-hidden="true"></span>
-                <span class="status-indicator status-idle" aria-hidden="true"></span>
-              </div>
-              <div class="ws-status">
-                <span id="ws-status-dot" class="status-dot status-connecting" aria-hidden="true"></span>
-                <span id="ws-status-label" class="status-label">Connecting...</span>
-              </div>
-            </div>
             <div class="hud-actions-inline">
-              <button class="icon-btn log-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Log panel">≡</button>
               <button class="pill-btn ghost-btn" id="clear-transcript-btn">Clear</button>
               <button id="stop-btn" class="pill-btn accent-btn">Stop Listening</button>
               <button id="exit-btn" class="pill-btn danger-btn">Exit</button>
@@ -70,20 +93,9 @@
         </div>
 
         <div class="chin-actions">
-          <button id="answer-btn" class="chin-btn primary">Answer Question</button>
-          <button id="analyze-btn" class="chin-btn secondary">Analyze Screen</button>
+          <button id="answer-btn" class="chin-btn primary">AI Answer</button>
+          <button id="analyze-btn" class="chin-btn secondary">Analyse Screen</button>
         </div>
-      </div>
-    </div>
-
-    <div class="log-panel hidden" id="log-panel" aria-live="polite">
-      <div class="log-section">
-        <div class="log-title">System Audio</div>
-        <div class="log-lines" id="system-audio-log">Listening for system audio...</div>
-      </div>
-      <div class="log-section muted">
-        <div class="log-title">Mic Audio</div>
-        <div class="log-lines">Mic disabled</div>
       </div>
     </div>
 

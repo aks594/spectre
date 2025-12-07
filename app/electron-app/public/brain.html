@@ -9,22 +9,20 @@
     <div class="brain-viewport">
       <div class="brain-shell">
         <header class="brain-header">
-          <div class="header-left">
-            <div class="history-controls">
-              <button id="history-prev-btn" class="nav-btn" aria-label="Previous" disabled>&larr;</button>
-              <button id="history-next-btn" class="nav-btn" aria-label="Next" disabled>&rarr;</button>
-            </div>
-            <div class="session-chip">Interview Intelligence</div>
+          <div class="history-controls">
+            <button id="history-prev-btn" class="nav-btn" aria-label="Previous" disabled>&larr;</button>
+            <button id="history-next-btn" class="nav-btn" aria-label="Next" disabled>&rarr;</button>
           </div>
-          <div class="header-right">
-            <button id="close-brain-btn" class="icon-btn close-btn" aria-label="Close overlay">&times;</button>
-          </div>
+          <button id="close-brain-btn" class="icon-btn close-btn" aria-label="Close overlay">&times;</button>
         </header>
 
         <main class="brain-content">
           <section class="content-block question-block">
             <div class="block-header">
-              <span class="block-label">Summarized question:</span>
+              <div class="block-meta">
+                <span class="block-label">Summarized question:</span>
+                <span class="block-kicker">Latest from interviewer</span>
+              </div>
               <span id="question-status-chip" class="status-chip">Waiting</span>
             </div>
             <div id="question-stream" class="stream-text question-text" role="log" aria-live="polite">
@@ -32,11 +30,12 @@
             </div>
           </section>
 
-          <div class="divider"></div>
-
           <section class="content-block answer-block">
             <div class="block-header">
-              <span class="block-label">Answer</span>
+              <div class="block-meta">
+                <span class="block-label">Answer</span>
+                <span class="block-kicker">Model response</span>
+              </div>
               <span id="answer-status-chip" class="status-chip">Idle</span>
             </div>
             <div id="answer-stream" class="stream-text answer-text" role="log" aria-live="polite">

@@ -1,3 +1,19 @@
+// Add this helper to manage click-through
+const setupMouseEvents = () => {
+  const shell = document.querySelector('.hud-shell');
+  if (!shell) return;
+
+  shell.addEventListener('mouseenter', () => {
+    // When mouse is over the HUD, stop ignoring mouse events (enable clicking)
+    window.electronAPI.setIgnoreMouseEvents(false);
+  });
+
+  shell.addEventListener('mouseleave', () => {
+    // When mouse leaves HUD, ignore mouse events (let clicks pass through to desktop)
+    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+  });
+};
+
 const TRANSCRIPT_MAX_LENGTH = 700;
 const FILLER_PHRASES = ['uh', 'um', 'you know', 'like', 'i mean', 'okay so'];
 const QUESTION_HINTS = [
@@ -153,6 +169,7 @@ const buildCleanedQuestion = (rawTranscript) => {
 };
 
 const initHud = () => {
+  setupMouseEvents();
   const transcriptEl = document.getElementById('transcript');
   const statusDot = document.getElementById('ws-status-dot');
   const statusLabel = document.getElementById('ws-status-label');
@@ -163,6 +180,8 @@ const initHud = () => {
   const scaleDownButton = document.getElementById('scale-down-btn');
   const moveLeftButton = document.getElementById('move-left-btn');
   const moveRightButton = document.getElementById('move-right-btn');
+  const exitButton = document.getElementById('exit-btn');
+  const clearButton = document.getElementById('clear-transcript-btn');
   const toastEl = document.getElementById('hud-toast');
 
   let transcriptBuffer = transcriptEl?.textContent?.trim() || '';
@@ -226,6 +245,9 @@ const initHud = () => {
   const updateTranscript = (incoming) => {
     if (!transcriptEl || !incoming) {
       return;
+    }
+    if (transcriptBuffer === 'Waiting for transcript...') {
+      transcriptBuffer = '';
     }
     transcriptBuffer = appendTranscript(transcriptBuffer, incoming);
     transcriptEl.textContent = transcriptBuffer;
@@ -415,6 +437,19 @@ const initHud = () => {
     window.electronAPI?.moveRight?.();
     window.electronAPI?.syncBrainPosition?.();
     logHud('Move right');
+  });
+
+  clearButton?.addEventListener('click', () => {
+    transcriptBuffer = '';
+    if (transcriptEl) {
+      transcriptEl.textContent = '';
+    }
+    logHud('Transcript cleared');
+  });
+
+  exitButton?.addEventListener('click', () => {
+    window.electronAPI?.exitApp?.();
+    logHud('Exit clicked');
   });
 
   updateStopButton();

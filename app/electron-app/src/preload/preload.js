@@ -35,4 +35,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onQuestionComplete: (callback) => subscribe('question-complete', callback),
   onAnswerStream: (callback) => subscribe('answer-stream', callback),
   onAnswerComplete: (callback) => subscribe('answer-complete', callback),
+  exitApp: () => ipcRenderer.invoke('exit-app'),
+  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
 });
