@@ -85,7 +85,8 @@ def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
     try:
         resp = groq_client.audio.transcriptions.create(
             file=("audio.wav", wav_bytes, "audio/wav"),
-            model="whisper-large-v3",
+            # model="whisper-large-v3",
+            model="whisper-large-v3-turbo",
             response_format="text",
             language=WHISPER_LANGUAGE or None,
         )

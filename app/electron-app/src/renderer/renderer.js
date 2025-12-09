@@ -596,6 +596,7 @@ const initBrain = () => {
   const answerEl = document.getElementById('answer-stream');
   const questionStateEl = document.getElementById('question-section-state');
   const answerStateEl = document.getElementById('answer-section-state');
+  const brainShell = document.querySelector('.brain-shell');
 
   const state = {
     sessionId: 0,
@@ -747,6 +748,18 @@ const initBrain = () => {
     questionEl?.classList.add('brain-stream--complete');
     answerEl?.classList.add('brain-stream--complete');
   });
+
+  if (brainShell && window.ResizeObserver) {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const height = Math.ceil(entry.contentRect.height + 4); // +4 for border/shadow safety
+        if (height > 0) {
+          window.Electron?.sendBrainHeight?.(height);
+        }
+      }
+    });
+    observer.observe(brainShell);
+  }
 
   closeButton?.addEventListener('click', () => {
     window.electronAPI?.closeBrain?.();

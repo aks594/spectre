@@ -26,6 +26,7 @@ let sttSequence = 0;
 let CachedWebSocketImpl;
 let isResizing = false;
 let currentHudHeight = 150;
+let brainIntendedState = false;
 
 const sendToWindow = (targetWindow, channel, payload) => {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -331,7 +332,17 @@ const createBrainWindow = () => {
   brainWindow.setAlwaysOnTop(true, 'screen-saver');
   brainWindow.loadURL(BRAIN_WINDOW_WEBPACK_ENTRY);
 
+  // --- STEALTH FIX: Apply immediately and on every show event ---
   setWindowHiddenFromCapture(brainWindow);
+
+  brainWindow.once('ready-to-show', () => {
+    setWindowHiddenFromCapture(brainWindow);
+  });
+
+  brainWindow.on('show', () => {
+    setWindowHiddenFromCapture(brainWindow);
+  });
+  // -------------------------------------------------------------
 
   brainWindow.on('closed', () => {
     brainWindow = null;
@@ -612,8 +623,23 @@ const registerIpcHandlers = () => {
     }
   });
 
+  ipcMain.on('brain-height-change', (_event, height) => {
+    if (!brainWindow || brainWindow.isDestroyed()) return;
+    const bounds = brainWindow.getBounds();
+    // Only update if height is different to avoid loops
+    if (bounds.height !== height) {
+      brainWindow.setBounds({ 
+        x: bounds.x, 
+        y: bounds.y, 
+        width: bounds.width, 
+        height: height 
+      });
+    }
+  });
+
   ipcMain.handle('open-brain', () => {
     if (!brainWindow) return;
+    brainIntendedState = true;
     updateBrainPosition();
     brainWindow.show();
     brainWindow.focus();
@@ -621,6 +647,7 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle('close-brain', () => {
     if (!brainWindow) return;
+    brainIntendedState = false;
     brainWindow.hide();
   });
 
@@ -631,7 +658,10 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle('show-brain-only', () => {
     if (!brainWindow || brainWindow.isDestroyed()) return;
-    brainWindow.show();
+    setWindowHiddenFromCapture(brainWindow);
+    if (brainIntendedState) {
+       brainWindow.show();
+    }
   });
 
   ipcMain.handle('toggle-hud', () => {

@@ -42,4 +42,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startResize: (direction) => ipcRenderer.send('start-resize', direction),
   performResize: (payload) => ipcRenderer.invoke('perform-resize', payload),
   sendHudHeight: (height) => ipcRenderer.send('hud-height-change', height),
+  sendBrainHeight: (height) => ipcRenderer.send('brain-height-change', height),
 });
