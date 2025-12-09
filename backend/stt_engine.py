@@ -6,9 +6,12 @@ import difflib
 import requests
 import numpy as np
 import sounddevice as sd
+import queue
+import threading
 from dotenv import load_dotenv
 from groq import Groq
 
+sd.default.latency = 'low'
 
 # ---------- SIMPLE AUDIO FILTERS ----------
 def highpass_filter(samples: np.ndarray, cutoff_hz: float, sr: int) -> np.ndarray:
@@ -76,6 +79,7 @@ MIN_CHARS = 10
 
 rolling_buffer = np.zeros(int(DEVICE_SR * WINDOW), dtype=np.float32)
 shift_samples = max(1, int(DEVICE_SR * SHIFT))
+audio_queue = queue.Queue(maxsize=5)  # small buffer to avoid huge lag
 
 
 # ---------- HELPERS ----------
@@ -107,7 +111,6 @@ def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
     try:
         resp = groq_client.audio.transcriptions.create(
             file=("audio.wav", wav_bytes, "audio/wav"),
-            # model="whisper-large-v3",
             model="whisper-large-v3-turbo",
             response_format="text",
             language=WHISPER_LANGUAGE or 'en',
@@ -131,7 +134,7 @@ def push_to_backend(text: str):
 # Track last transcription to avoid sending identical consecutive chunks
 last_transcription = ""
 last_transcription_time = 0.0  # seconds
-COOLDOWN_SECONDS = 0.8         # minimum gap between accepted transcriptions
+COOLDOWN_SECONDS = 2.0         # minimum gap between accepted transcriptions
 
 def audio_callback(indata, frames, time_info, status):
     global rolling_buffer, last_transcription, last_transcription_time
@@ -147,46 +150,85 @@ def audio_callback(indata, frames, time_info, status):
 
     rolling_buffer = np.concatenate([rolling_buffer, audio])[-len(rolling_buffer):]
 
-
     # Silence check
     rms = np.sqrt(np.mean(rolling_buffer**2))
     if rms < MIN_RMS:
         return
 
     # Resample to 16k
-    resampled = fast_resample(rolling_buffer, DEVICE_SR, TARGET_SR, WINDOW)
+    if DEVICE_SR == 48000:
+        resampled = rolling_buffer[::3].astype(np.float32)
+    else:
+        resampled = fast_resample(rolling_buffer, DEVICE_SR, TARGET_SR, WINDOW)
 
-    # Cool-down: avoid going to Whisper too often
+    # Cool-down: avoid enqueuing too often
     now = time.time()
     if now - last_transcription_time < COOLDOWN_SECONDS:
         return
 
-    # Transcribe
-    text = transcribe_chunk_16k(resampled)
-    if not text:
+    try:
+        audio_queue.put_nowait(resampled.copy())
+    except queue.Full:
+        # worker is behind; drop this chunk to keep latency bounded
         return
     
-    # Content gating to drop very short/noisy fragments
-    words = text.strip().split()
-    if len(words) < MIN_WORDS and len(text.strip()) < MIN_CHARS:
-        return
+    # # Transcribe
+    # text = transcribe_chunk_16k(resampled)
+    # if not text:
+    #     return
+    
+    # # Content gating to drop very short/noisy fragments
+    # words = text.strip().split()
+    # if len(words) < MIN_WORDS and len(text.strip()) < MIN_CHARS:
+    #     return
 
-    # Skip near-duplicates to reduce backend noise
-    text_normalized = text.strip().lower()
-    similarity = difflib.SequenceMatcher(None, text_normalized, last_transcription).ratio()
-    if similarity > 0.8:
-        # If new text isn't meaningfully longer, treat as duplicate noise
-        if len(text_normalized) <= len(last_transcription) + 4:
-            return
+    # # Skip near-duplicates to reduce backend noise
+    # text_normalized = text.strip().lower()
+    # similarity = difflib.SequenceMatcher(None, text_normalized, last_transcription).ratio()
+    # if similarity > 0.9 and len(text_normalized) <= len(last_transcription) + 4:
+    #     return
     
-    last_transcription = text_normalized
-    last_transcription_time = time.time()
-    print(f"\n[STT] {text}")
-    push_to_backend(text)
+    # last_transcription = text_normalized
+    # last_transcription_time = time.time()
+    # print(f"\n[STT] {text}")
+    # push_to_backend(text)
+
+
+def worker_loop():
+    global last_transcription, last_transcription_time
+
+    while True:
+        chunk = audio_queue.get()  # blocks until audio available
+
+        text = transcribe_chunk_16k(chunk)
+        if not text:
+            continue
+
+        # Content gating to drop very short/noisy fragments
+        words = text.strip().split()
+        if len(words) < MIN_WORDS and len(text.strip()) < MIN_CHARS:
+            continue
+
+        # Skip near-duplicates to reduce backend noise
+        text_normalized = text.strip().lower()
+        similarity = difflib.SequenceMatcher(
+            None, text_normalized, last_transcription
+        ).ratio()
+        if similarity > 0.9 and len(text_normalized) <= len(last_transcription) + 4:
+            continue
+
+        last_transcription = text_normalized
+        last_transcription_time = time.time()
+        print(f"\n[STT] {text}")
+        push_to_backend(text)
 
 
 # ---------- MAIN ----------
 def main():
+    # start worker
+    t = threading.Thread(target=worker_loop, daemon=True)
+    t.start()
+
     try:
         with sd.InputStream(
             samplerate=DEVICE_SR,
