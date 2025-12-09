@@ -10,7 +10,7 @@
   --accent-2: #a1a1aa;
   --danger: #ef4444;
   --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.7);
-  --font-sans: "Sora", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
 .resize-handle {
@@ -597,4 +597,30 @@
   width: 28px; 
   height: 28px;
   padding: 0;
+}
+
+/* Force key HUD controls to pure black/white (Exit left unchanged) */
+.collapse-toggle,
+.collapse-show,
+#stop-btn,
+#answer-btn,
+#analyze-btn,
+#clear-transcript-btn,
+.log-dropdown .log-trigger {
+  background: #000000;
+  color: #ffffff;
+  border-color: #000000;
+  box-shadow: none;
+}
+
+.collapse-toggle:hover,
+.collapse-show:hover,
+#stop-btn:hover,
+#answer-btn:hover,
+#analyze-btn:hover,
+#clear-transcript-btn:hover,
+.log-dropdown .log-trigger:hover {
+  background: #0a0a0a;
+  color: #ffffff;
+  border-color: #0a0a0a;
 }

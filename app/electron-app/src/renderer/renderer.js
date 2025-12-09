@@ -603,6 +603,33 @@ const initBrain = () => {
     answerBuffer: '',
   };
 
+  const attachCopyButtons = (root) => {
+    if (!root) return;
+    const blocks = root.querySelectorAll('pre');
+    blocks.forEach((pre) => {
+      if (pre.querySelector('.code-copy-btn')) {
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'code-copy-btn';
+      btn.setAttribute('aria-label', 'Copy code');
+      btn.textContent = '⧉';
+      btn.addEventListener('click', () => {
+        const codeText = pre.querySelector('code')?.innerText
+          || Array.from(pre.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent || '')
+            .join('')
+            .trim();
+        if (!codeText) return;
+        navigator.clipboard?.writeText(codeText);
+      });
+      pre.style.position = pre.style.position || 'relative';
+      pre.appendChild(btn);
+    });
+  };
+
   const setStatus = (text, variant = 'idle') => {
     if (!statusEl) return;
     statusEl.textContent = text;
@@ -625,6 +652,7 @@ const initBrain = () => {
     const stick = shouldStickToBottom(container);
     state[bufferKey] = `${state[bufferKey]}${chunk}`;
     container.textContent = state[bufferKey];
+    attachCopyButtons(container);
     if (stick) {
       container.scrollTop = container.scrollHeight;
     }

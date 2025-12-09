@@ -11,8 +11,8 @@
   --text-secondary: #a1a1aa;
   --accent: #a1a1aa;
   --accent-2: #a1a1aa;
-  --mono: "IBM Plex Mono", "JetBrains Mono", monospace;
-  --font-family: "Sora", "Segoe UI", system-ui, sans-serif;
+  --mono: "Fira Code", "IBM Plex Mono", "JetBrains Mono", monospace;
+  --font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.7);
 }
 
@@ -59,8 +59,7 @@ body { background: transparent !important; }
   width: 100%;
   box-sizing: border-box;
   max-height: 92vh;
-  background: #0a0a0c !important;
-  opacity: 1;
+  background: rgba(10, 10, 12, 0.94) !important;
   border: 1px solid #2a2a2a;
   border-radius: 12px;
   box-shadow: none;
@@ -212,21 +211,21 @@ body { background: transparent !important; }
 
 .brain-content {
   flex: 1;
-  padding: 18px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   overflow-y: auto;
   background: #121212;
 }
 
 .content-block {
-  padding: 18px 0;
+  padding: 12px 0;
   background: transparent;
   border: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .label-row {
@@ -266,12 +265,37 @@ body { background: transparent !important; }
 .answer-text code,
 .answer-text pre {
   font-family: var(--mono);
-  background: rgba(8, 10, 12, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #2a2a2a;
+  color: #ffffff;
+  border: 1px solid #3a3a3a;
   border-radius: 10px;
 }
 .answer-text code { padding: 2px 6px; }
-.answer-text pre { padding: 12px; overflow: auto; margin: 10px 0; }
+.answer-text pre {
+  position: relative;
+  padding: 14px;
+  overflow: auto;
+  margin: 10px 0;
+}
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0.9;
+}
+.code-copy-btn:hover { opacity: 1; }
 .answer-text ul { padding-left: 18px; margin: 8px 0; }
 .answer-text li { margin: 4px 0; }
 
