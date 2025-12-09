@@ -4,11 +4,32 @@ import io
 import wave
 import difflib
 import requests
-
 import numpy as np
 import sounddevice as sd
 from dotenv import load_dotenv
 from groq import Groq
+
+
+# ---------- SIMPLE AUDIO FILTERS ----------
+def highpass_filter(samples: np.ndarray, cutoff_hz: float, sr: int) -> np.ndarray:
+    """
+    Very cheap 1-pole high-pass filter to remove low rumble (AC, fans).
+    """
+    # normalized RC
+    from math import pi
+    rc = 1.0 / (2 * pi * cutoff_hz)
+    dt = 1.0 / sr
+    alpha = rc / (rc + dt)
+
+    if len(samples) == 0:
+        return samples
+
+    y = np.empty_like(samples)
+    y[0] = samples[0]
+    for i in range(1, len(samples)):
+        y[i] = alpha * (y[i - 1] + samples[i] - samples[i - 1])
+    return y
+
 
 # ---------- ENV & API KEYS ----------
 load_dotenv()
@@ -20,7 +41,8 @@ if not GROQ_API_KEY:
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 API_BASE = os.getenv("INTERVIEWAI_API_BASE", "http://127.0.0.1:8000")
-WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "")  # empty -> auto-detect (better for Hinglish)
+# WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "")  # empty -> auto-detect (better for Hinglish)
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "en")
 
 
 # ---------- AUDIO CONFIG (DYNAMIC) ----------
@@ -44,7 +66,7 @@ else:
     print(f"✔ Found 'Stereo Mix' at Index {DEVICE_INDEX} ({DEVICE_SR} Hz)")
 
 TARGET_SR = 16000
-WINDOW = 3.2  # slightly longer window to reduce mid-sentence splits
+WINDOW = 4.5  # slightly longer window to reduce mid-sentence splits
 SHIFT = WINDOW * 0.55
 MIN_RMS = 0.015  # slightly stricter noise gate
 CHANNELS = 1
@@ -88,7 +110,7 @@ def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
             # model="whisper-large-v3",
             model="whisper-large-v3-turbo",
             response_format="text",
-            language=WHISPER_LANGUAGE or None,
+            language=WHISPER_LANGUAGE or 'en',
         )
         return resp.strip()
     except Exception as e:
@@ -108,16 +130,23 @@ def push_to_backend(text: str):
 # ---------- AUDIO CALLBACK ----------
 # Track last transcription to avoid sending identical consecutive chunks
 last_transcription = ""
+last_transcription_time = 0.0  # seconds
+COOLDOWN_SECONDS = 0.8         # minimum gap between accepted transcriptions
 
 def audio_callback(indata, frames, time_info, status):
-    global rolling_buffer, last_transcription
+    global rolling_buffer, last_transcription, last_transcription_time
 
     if status:
         print("[AUDIO STATUS]", status)
 
     # Append audio to rolling buffer
     audio = indata[:, 0]  # first channel
+
+    # Cheap high-pass to remove low hum
+    audio = highpass_filter(audio, cutoff_hz=100.0, sr=DEVICE_SR)
+
     rolling_buffer = np.concatenate([rolling_buffer, audio])[-len(rolling_buffer):]
+
 
     # Silence check
     rms = np.sqrt(np.mean(rolling_buffer**2))
@@ -126,6 +155,11 @@ def audio_callback(indata, frames, time_info, status):
 
     # Resample to 16k
     resampled = fast_resample(rolling_buffer, DEVICE_SR, TARGET_SR, WINDOW)
+
+    # Cool-down: avoid going to Whisper too often
+    now = time.time()
+    if now - last_transcription_time < COOLDOWN_SECONDS:
+        return
 
     # Transcribe
     text = transcribe_chunk_16k(resampled)
@@ -144,9 +178,9 @@ def audio_callback(indata, frames, time_info, status):
         # If new text isn't meaningfully longer, treat as duplicate noise
         if len(text_normalized) <= len(last_transcription) + 4:
             return
-        return
     
     last_transcription = text_normalized
+    last_transcription_time = time.time()
     print(f"\n[STT] {text}")
     push_to_backend(text)
 
