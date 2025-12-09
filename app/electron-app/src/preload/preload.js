@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openBrain: () => ipcRenderer.invoke('open-brain'),
   closeBrain: () => ipcRenderer.invoke('close-brain'),
   toggleHud: () => ipcRenderer.invoke('toggle-hud'),
+  hideBrainOnly: () => ipcRenderer.invoke('hide-brain-only'),
+  showBrainOnly: () => ipcRenderer.invoke('show-brain-only'),
   scaleUp: () => ipcRenderer.invoke('scale-up'),
   scaleDown: () => ipcRenderer.invoke('scale-down'),
   moveLeft: () => ipcRenderer.invoke('move-left'),
@@ -39,4 +41,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
   startResize: (direction) => ipcRenderer.send('start-resize', direction),
   performResize: (payload) => ipcRenderer.invoke('perform-resize', payload),
+  sendHudHeight: (height) => ipcRenderer.send('hud-height-change', height),
 });

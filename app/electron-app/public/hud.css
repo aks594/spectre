@@ -1,15 +1,15 @@
 :root {
   color-scheme: dark;
   --hud-width: 800px;
-  --glass-bg: rgba(15, 15, 17, 0.70);
-  --border-subtle: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.24);
-  --text-main: #f8fafc;
-  --text-muted: #cbd5e1;
-  --accent: #3bd16f;
-  --accent-2: #4f9bff;
+  --glass-bg: #0f0f10;
+  --border-subtle: #2a2a2a;
+  --border-strong: #3a3a3a;
+  --text-main: #ffffff;
+  --text-muted: #a1a1aa;
+  --accent: #a1a1aa;
+  --accent-2: #a1a1aa;
   --danger: #ef4444;
-  --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.45);
+  --shadow-strong: 0 18px 60px rgba(0, 0, 0, 0.7);
   --font-sans: "Sora", "Segoe UI", system-ui, sans-serif;
 }
 
@@ -39,7 +39,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  background: transparent;
+  background: transparent !important;
   color: var(--text-main);
   font-family: var(--font-sans);
   overflow: hidden;
@@ -50,20 +50,22 @@
   display: flex;
   justify-content: center;
   padding-top: 12px;
+  background: transparent !important;
 }
 
 .hud-shell {
   position: relative;
-  width: min(var(--hud-width), 96vw);
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 8px;
   pointer-events: auto;
-  background: var(--glass-bg);
+  background: rgba(15, 15, 17, 0.70) !important;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  backdrop-filter: blur(24px);
-  box-shadow: var(--shadow-strong);
+  backdrop-filter: blur(20px);
+  box-shadow: none;
   padding: 10px 12px;
   -webkit-app-region: drag;
 }
@@ -202,7 +204,7 @@
   gap: 10px;
   padding: 6px 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #161616;
   border: 1px solid var(--border-subtle);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
@@ -211,8 +213,8 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #6cff9f, #15ad5b 70%);
-  box-shadow: 0 0 14px rgba(59, 209, 111, 0.75);
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .brand-copy {
@@ -244,9 +246,9 @@
 .chip-btn {
   height: 34px;
   border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: #a1a1aa;
+  border: 1px solid var(--border-subtle);
+  background: #1c1c1f;
+  color: #e5e5e5;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -276,12 +278,13 @@
 .icon-btn:hover,
 .chip-btn:hover {
   border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+  background: #222326;
+  color: #ffffff;
 }
 
 .ghost-btn {
   color: var(--text-muted);
+  background: #171719;
 }
 
 .ghost-btn:hover {
@@ -289,29 +292,29 @@
 }
 
 .primary-btn {
-  background: rgba(59, 209, 111, 0.14);
-  border-color: rgba(59, 209, 111, 0.4);
-  color: #6cff9f;
+  background: #222326;
+  border-color: var(--border-strong);
+  color: #ffffff;
 }
 
 .primary-btn:hover {
-  background: rgba(59, 209, 111, 0.24);
+  background: #26272b;
 }
 
 .accent-btn {
-  background: rgba(79, 155, 255, 0.14);
-  border-color: rgba(79, 155, 255, 0.4);
-  color: #cde2ff;
+  background: #222326;
+  border-color: var(--border-strong);
+  color: #ffffff;
 }
 
 .accent-btn:hover {
-  background: rgba(79, 155, 255, 0.24);
+  background: #26272b;
 }
 
 .accent-btn.is-paused {
-  background: rgba(255, 186, 64, 0.12);
-  border-color: rgba(255, 186, 64, 0.4);
-  color: #ffd68a;
+  background: #1f1f22;
+  border-color: var(--border-strong);
+  color: var(--text-main);
 }
 
 .danger-btn {
@@ -342,8 +345,8 @@
   overflow-y: hidden;
   padding: 8px 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #161616;
+  border: 1px solid var(--border-subtle);
   min-height: 36px;
   display: flex;
   align-items: center;
@@ -374,10 +377,10 @@
   width: 210px;
   padding: 12px;
   border-radius: 14px;
-  background: rgba(14, 16, 20, 0.96);
+  background: #131316;
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-strong);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
   display: none;
   z-index: 30;
 }

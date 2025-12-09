@@ -237,6 +237,7 @@ const initHud = () => {
   const answerButton = document.getElementById('answer-btn');
   const stopButton = document.getElementById('stop-btn');
   const hideButton = document.getElementById('hide-btn');
+  const hudToggle = document.getElementById('hud-toggle');
   const scaleUpButton = document.getElementById('scale-up-btn');
   const scaleDownButton = document.getElementById('scale-down-btn');
   const moveLeftButton = document.getElementById('move-left-btn');
@@ -246,6 +247,19 @@ const initHud = () => {
   const layoutTrigger = document.querySelector('.layout-trigger');
   const layoutMenu = document.querySelector('.layout-menu');
   const toastEl = document.getElementById('hud-toast');
+  const hudShell = document.querySelector('.hud-shell');
+
+  if (hudShell && window?.ResizeObserver) {
+    const observer = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const height = Math.round(entry.contentRect.height + 24);
+        if (Number.isFinite(height) && height > 0) {
+          window.electronAPI?.sendHudHeight?.(height);
+        }
+      });
+    });
+    observer.observe(hudShell);
+  }
 
   const PLACEHOLDER = 'Waiting for transcript...';
   let hudWasListeningBeforeAnswer = true;
@@ -514,6 +528,14 @@ const initHud = () => {
   hideButton?.addEventListener('click', () => {
     window.electronAPI?.toggleHud?.();
     logHud('Hide HUD clicked');
+  });
+
+  hudToggle?.addEventListener('change', () => {
+    if (hudToggle.checked) {
+      window.electronAPI?.hideBrainOnly?.();
+      return;
+    }
+    window.electronAPI?.showBrainOnly?.();
   });
 
   if (layoutTrigger && layoutMenu) {

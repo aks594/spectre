@@ -10,7 +10,7 @@ let brainWindow;
 const HUD_BASE_WIDTH = 800;
 // Give the HUD ample height so all rows and dropdowns fit without clipping.
 const HUD_BASE_HEIGHT = 220;
-const BRAIN_GAP = 4;
+const GAP_BETWEEN_WINDOWS = 3;
 const ASK_WS_URL = 'ws://localhost:8000/ws/ask';
 const STT_WS_URL = process.env.INTERVIEWAI_STT_WS || 'ws://localhost:8000/ws/stt';
 let hudScale = 1;
@@ -25,6 +25,7 @@ let currentSttState = 'disconnected';
 let sttSequence = 0;
 let CachedWebSocketImpl;
 let isResizing = false;
+let currentHudHeight = 150;
 
 const sendToWindow = (targetWindow, channel, payload) => {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -192,10 +193,10 @@ const updateBrainPosition = () => {
   }
   const hudBounds = hudWindow.getBounds();
   const brainBounds = brainWindow.getBounds();
-  const dynamicGap = BRAIN_GAP;
+  const brainY = Math.round(hudBounds.y + currentHudHeight + GAP_BETWEEN_WINDOWS);
   brainWindow.setBounds({
     x: hudBounds.x,
-    y: hudBounds.y + hudBounds.height + dynamicGap,
+    y: brainY,
     width: hudBounds.width,
     height: brainBounds.height,
   });
@@ -564,6 +565,15 @@ const registerIpcHandlers = () => {
     // Placeholder hook to align with renderer handshake; actual sizing is handled in perform-resize.
   });
 
+  ipcMain.on('hud-height-change', (_event, height) => {
+    const normalized = Number(height);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      return;
+    }
+    currentHudHeight = normalized;
+    updateBrainPosition();
+  });
+
   ipcMain.handle('perform-resize', (event, payload = {}) => {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
     if (!senderWindow || senderWindow.isDestroyed()) {
@@ -612,6 +622,16 @@ const registerIpcHandlers = () => {
   ipcMain.handle('close-brain', () => {
     if (!brainWindow) return;
     brainWindow.hide();
+  });
+
+  ipcMain.handle('hide-brain-only', () => {
+    if (!brainWindow) return;
+    brainWindow.hide();
+  });
+
+  ipcMain.handle('show-brain-only', () => {
+    if (!brainWindow || brainWindow.isDestroyed()) return;
+    brainWindow.show();
   });
 
   ipcMain.handle('toggle-hud', () => {
