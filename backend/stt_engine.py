@@ -77,8 +77,8 @@ CHANNELS = 1
 MIN_WORDS = 2  # require some content to reduce noise snippets
 MIN_CHARS = 10
 
-rolling_buffer = np.zeros(int(DEVICE_SR * WINDOW), dtype=np.float32)
-shift_samples = max(1, int(DEVICE_SR * SHIFT))
+# rolling_buffer = np.zeros(int(DEVICE_SR * WINDOW), dtype=np.float32)
+# shift_samples = max(1, int(DEVICE_SR * SHIFT))
 audio_queue = queue.Queue(maxsize=5)  # small buffer to avoid huge lag
 
 
@@ -106,20 +106,37 @@ def fast_resample(mono_pcm: np.ndarray, orig_sr: int, target_sr: int, seconds: f
     return np.interp(x_new, x_old, mono_pcm).astype(np.float32)
 
 
-def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
+# def transcribe_chunk_16k(chunk_16k: np.ndarray) -> str:
+#     wav_bytes = float_to_wav_bytes(chunk_16k, TARGET_SR)
+#     try:
+#         resp = groq_client.audio.transcriptions.create(
+#             file=("audio.wav", wav_bytes, "audio/wav"),
+#             model="whisper-large-v3-turbo",
+#             response_format="text",
+#             language=WHISPER_LANGUAGE or 'en',
+#         )
+#         return resp.strip()
+#     except Exception as e:
+#         print("[STT Error]", e)
+#         return ""
+
+def transcribe_chunk_16k(chunk_16k: np.ndarray, last_text: str = "") -> str:
     wav_bytes = float_to_wav_bytes(chunk_16k, TARGET_SR)
     try:
+        # Take the last 200 chars as context to keep the prompt efficient
+        prompt_text = last_text[-200:] if last_text else "This is a technical interview."
+        
         resp = groq_client.audio.transcriptions.create(
             file=("audio.wav", wav_bytes, "audio/wav"),
             model="whisper-large-v3-turbo",
             response_format="text",
             language=WHISPER_LANGUAGE or 'en',
+            prompt=prompt_text  # <--- CRITICAL ADDITION
         )
         return resp.strip()
     except Exception as e:
         print("[STT Error]", e)
         return ""
-
 
 def push_to_backend(text: str):
     try:
@@ -136,62 +153,64 @@ last_transcription = ""
 last_transcription_time = 0.0  # seconds
 COOLDOWN_SECONDS = 2.0         # minimum gap between accepted transcriptions
 
+# Global accumulation buffer
+accumulated_audio = np.array([], dtype=np.float32)
+silence_start_time = None
+IS_SPEAKING = False
+
+# Config for VAD
+SILENCE_THRESHOLD = 0.6  # Seconds of silence to trigger a send
+VAD_RMS_THRESHOLD = 0.015  # Adjust based on mic sensitivity
+
 def audio_callback(indata, frames, time_info, status):
-    global rolling_buffer, last_transcription, last_transcription_time
+    global accumulated_audio, silence_start_time, IS_SPEAKING
 
     if status:
         print("[AUDIO STATUS]", status)
 
-    # Append audio to rolling buffer
-    audio = indata[:, 0]  # first channel
-
-    # Cheap high-pass to remove low hum
+    # 1. Get Audio & Filter
+    audio = indata[:, 0]
     audio = highpass_filter(audio, cutoff_hz=100.0, sr=DEVICE_SR)
 
-    rolling_buffer = np.concatenate([rolling_buffer, audio])[-len(rolling_buffer):]
+    # 2. Calculate Energy (RMS)
+    rms = np.sqrt(np.mean(audio**2))
 
-    # Silence check
-    rms = np.sqrt(np.mean(rolling_buffer**2))
-    if rms < MIN_RMS:
-        return
-
-    # Resample to 16k
-    if DEVICE_SR == 48000:
-        resampled = rolling_buffer[::3].astype(np.float32)
-    else:
-        resampled = fast_resample(rolling_buffer, DEVICE_SR, TARGET_SR, WINDOW)
-
-    # Cool-down: avoid enqueuing too often
-    now = time.time()
-    if now - last_transcription_time < COOLDOWN_SECONDS:
-        return
-
-    try:
-        audio_queue.put_nowait(resampled.copy())
-    except queue.Full:
-        # worker is behind; drop this chunk to keep latency bounded
-        return
+    # 3. VAD Logic
+    if rms > VAD_RMS_THRESHOLD:
+        # Speech detected
+        IS_SPEAKING = True
+        silence_start_time = None  # Reset silence timer
+    elif IS_SPEAKING:
+        # We were speaking, but now it's quiet. Start timing the silence.
+        if silence_start_time is None:
+            silence_start_time = time.time()
     
-    # # Transcribe
-    # text = transcribe_chunk_16k(resampled)
-    # if not text:
-    #     return
-    
-    # # Content gating to drop very short/noisy fragments
-    # words = text.strip().split()
-    # if len(words) < MIN_WORDS and len(text.strip()) < MIN_CHARS:
-    #     return
+    # 4. Accumulate audio
+    # Only accumulate if we are currently speaking or just finished
+    if IS_SPEAKING:
+        accumulated_audio = np.concatenate([accumulated_audio, audio])
 
-    # # Skip near-duplicates to reduce backend noise
-    # text_normalized = text.strip().lower()
-    # similarity = difflib.SequenceMatcher(None, text_normalized, last_transcription).ratio()
-    # if similarity > 0.9 and len(text_normalized) <= len(last_transcription) + 4:
-    #     return
-    
-    # last_transcription = text_normalized
-    # last_transcription_time = time.time()
-    # print(f"\n[STT] {text}")
-    # push_to_backend(text)
+    # 5. Trigger Logic (Silence Duration Reached)
+    if IS_SPEAKING and silence_start_time and (time.time() - silence_start_time > SILENCE_THRESHOLD):
+        # User finished a sentence!
+        
+        # Resample immediately (using the fast slice method)
+        if DEVICE_SR == 48000:
+             # Fast decimation for 48k -> 16k
+            chunk_to_send = accumulated_audio[::3].astype(np.float32)
+        else:
+            chunk_to_send = fast_resample(accumulated_audio, DEVICE_SR, TARGET_SR, len(accumulated_audio)/DEVICE_SR)
+
+        # Send to worker
+        try:
+            audio_queue.put_nowait(chunk_to_send)
+        except queue.Full:
+            pass # Drop if busy
+        
+        # RESET
+        accumulated_audio = np.array([], dtype=np.float32)
+        IS_SPEAKING = False
+        silence_start_time = None
 
 
 def worker_loop():
@@ -200,7 +219,8 @@ def worker_loop():
     while True:
         chunk = audio_queue.get()  # blocks until audio available
 
-        text = transcribe_chunk_16k(chunk)
+        # Inside worker_loop:
+        text = transcribe_chunk_16k(chunk, last_transcription)
         if not text:
             continue
 
@@ -219,7 +239,7 @@ def worker_loop():
 
         last_transcription = text_normalized
         last_transcription_time = time.time()
-        print(f"\n[STT] {text}")
+        print(f"\n[STT {time.strftime('%Y-%m-%d %H:%M:%S')}] {text}")
         push_to_backend(text)
 
 
@@ -228,6 +248,11 @@ def main():
     # start worker
     t = threading.Thread(target=worker_loop, daemon=True)
     t.start()
+    
+    # CRITICAL FIX: Make blocksize small (e.g., 0.2 seconds) 
+    # so VAD can detect silence quickly.
+    # 48000 Hz * 0.2s = 9600 samples
+    vad_block_size = int(DEVICE_SR * 0.2) 
 
     try:
         with sd.InputStream(
@@ -235,10 +260,11 @@ def main():
             device=DEVICE_INDEX,
             channels=CHANNELS,
             dtype="float32",
-            blocksize=shift_samples,
+            blocksize=vad_block_size, # <--- CHANGED FROM shift_samples
             callback=audio_callback,
         ):
-            print("✔ STT engine running. Press Ctrl+C to stop.\n")
+            print(f"✔ STT engine running (VAD Mode). Device: {DEVICE_INDEX}, Blocksize: {vad_block_size}")
+            print("✔ Press Ctrl+C to stop.\n")
             while True:
                 time.sleep(0.1)
     except KeyboardInterrupt:
