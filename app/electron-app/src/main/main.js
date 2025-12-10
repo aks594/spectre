@@ -1,6 +1,16 @@
 const { app, BrowserWindow, ipcMain, screen, net } = require('electron');
 const koffi = require('koffi');
 
+// --- CRITICAL FIXES FOR TEAMS/SCREEN SHARE CRASH ---
+// 1. Disable GPU to prevent DWM composition conflicts during screen share.
+app.disableHardwareAcceleration();
+
+// 2. Disable Native Window Occlusion.
+// This prevents Windows from hiding the window because it thinks it's "invisible"
+// to the capture engine, effectively making it invisible to YOU too.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+// ---------------------------------------------------
+
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
@@ -35,16 +45,42 @@ const sendToWindow = (targetWindow, channel, payload) => {
   targetWindow.webContents.send(channel, payload);
 };
 
-const setWindowHiddenFromCapture = (browserWindow) => {
+// --- GLOBAL NATIVE SETUP (Optimized) ---
+let SetWindowDisplayAffinity = null;
+
+try {
   const user32 = koffi.load('user32.dll');
-  const SetWindowDisplayAffinity = user32.func('bool SetWindowDisplayAffinity(intptr_t hWnd, uint32_t dwAffinity)');
-  const handle = browserWindow.getNativeWindowHandle();
-  if (!Buffer.isBuffer(handle)) {
-    console.error('Window handle is not a Buffer');
-    return;
+  // 0x11 = WDA_EXCLUDEFROMCAPTURE
+  SetWindowDisplayAffinity = user32.func('bool __stdcall SetWindowDisplayAffinity(intptr_t hWnd, uint32_t dwAffinity)');
+} catch (e) {
+  console.error('[FATAL] Failed to load user32.dll:', e);
+}
+
+const setWindowHiddenFromCapture = (browserWindow) => {
+  if (!SetWindowDisplayAffinity || !browserWindow || browserWindow.isDestroyed()) return;
+
+  try {
+    const handle = browserWindow.getNativeWindowHandle();
+    // Validate handle
+    if (!handle || (Buffer.isBuffer(handle) && handle.length === 0)) return;
+
+    // Robust pointer extraction for x64 vs x86
+    let hWnd;
+    if (Buffer.isBuffer(handle)) {
+        hWnd = process.arch === 'x64' 
+        ? handle.readBigInt64LE(0) 
+        : handle.readInt32LE(0);
+    } else {
+        hWnd = handle;
+    }
+
+    const result = SetWindowDisplayAffinity(hWnd, 0x00000011);
+    if (!result) {
+      console.warn(`[STEALTH] Failed to set affinity for window ID ${browserWindow.id}`);
+    }
+  } catch (e) {
+    console.error('[STEALTH] Critical error applying affinity:', e);
   }
-  const hWnd = process.arch === 'x64' ? handle.readBigInt64LE(0) : handle.readInt32LE(0);
-  SetWindowDisplayAffinity(hWnd, 0x00000011);
 };
 
 const resolveWebSocketImpl = () => {
@@ -203,35 +239,6 @@ const updateBrainPosition = () => {
   });
 };
 
-// const createHudWindow = () => {
-//   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
-//   const targetWidth = Math.round(HUD_BASE_WIDTH * hudScale);
-//   const x = Math.max(0, Math.floor((screenWidth - targetWidth) / 2));
-
-//   hudWindow = new BrowserWindow({
-//     width: targetWidth,
-//     height: Math.round(HUD_BASE_HEIGHT * hudScale),
-//     x,
-//     y: 20,
-//     frame: false,
-//     transparent: true,
-//     alwaysOnTop: true,
-//     resizable: false,
-//     skipTaskbar: true,
-//     webPreferences: {
-//       preload: HUD_WINDOW_PRELOAD_WEBPACK_ENTRY,
-//     },
-//   });
-
-//   hudWindow.setMenuBarVisibility(false);
-//   hudWindow.loadURL(HUD_WINDOW_WEBPACK_ENTRY);
-//   hudWindow.on('move', scheduleBrainPositionUpdate);
-//   hudWindow.on('resize', scheduleBrainPositionUpdate);
-//   hudWindow.on('closed', () => {
-//     hudWindow = null;
-//   });
-// };
-
 const createHudWindow = () => {
   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
   // Use the base height for full HUD visibility
@@ -258,6 +265,11 @@ const createHudWindow = () => {
 
   hudWindow.setMenuBarVisibility(false);
   hudWindow.loadURL(HUD_WINDOW_WEBPACK_ENTRY);
+
+  // --- CRITICAL FIX: Force Highest Z-Level ---
+  // 'screen-saver' level sits above normal 'always-on-top' windows (like Teams borders)
+  hudWindow.setAlwaysOnTop(true, 'screen-saver'); 
+  hudWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   setWindowHiddenFromCapture(hudWindow);
 
@@ -329,7 +341,9 @@ const createBrainWindow = () => {
   });
 
   brainWindow.setMenuBarVisibility(false);
-  brainWindow.setAlwaysOnTop(true, 'screen-saver');
+  // Update this line to include 'screen-saver'
+  brainWindow.setAlwaysOnTop(true, 'screen-saver'); 
+  brainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   brainWindow.loadURL(BRAIN_WINDOW_WEBPACK_ENTRY);
 
   // --- STEALTH FIX: Apply immediately and on every show event ---
@@ -777,12 +791,29 @@ const initBackendSession = () => {
   }
 };
 
+// --- Z-ORDER WATCHDOG ---
+const startZOrderEnforcer = () => {
+  setInterval(() => {
+    // Force HUD to top
+    if (hudWindow && !hudWindow.isDestroyed() && hudWindow.isVisible()) {
+      hudWindow.setAlwaysOnTop(true, 'screen-saver');
+      hudWindow.moveTop(); // Native OS call to bring to front
+    }
+    // Force Brain to top (if meant to be visible)
+    if (brainWindow && !brainWindow.isDestroyed() && brainWindow.isVisible()) {
+      brainWindow.setAlwaysOnTop(true, 'screen-saver');
+      brainWindow.moveTop();
+    }
+  }, 2000); // Run every 2 seconds
+};
+
 const bootstrap = () => {
   createHudWindow();
   createBrainWindow();
   initBackendSession();
   registerIpcHandlers();
   connectSttStream();
+  startZOrderEnforcer();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
