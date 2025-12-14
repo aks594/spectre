@@ -1,8 +1,40 @@
-# InterviewAI – Stealth Real-Time Interview Copilot
+# Spectre – Stealth Real-Time Interview Copilot
 
 **InterviewAI** is a local, privacy-focused desktop application designed to assist developers during live technical interviews. It captures system audio in real-time, transcribes it, and uses an Agentic AI pipeline (Llama 3 via Groq + Tavily Search) to generate context-aware, technically accurate answers.
 
 The application features a **Stealth HUD** and **Brain Overlay** that are invisible to screen capture tools (Zoom, Google Meet, Teams, OBS) using native Windows APIs.
+
+---
+
+## ⚡ Quickstart
+
+For the fastest path from clone to running app:
+
+1. In a Bash-capable terminal (Git Bash, WSL, etc.), from the project root:
+   ```bash
+   bash setup.sh
+   ```
+   This provisions the backend virtual environment, installs Python + Node dependencies, and creates a dummy `backend/.env`.
+2. Start the three services (one terminal each):
+   - Backend API:
+     ```bash
+     cd backend
+     .venv/Scripts/activate  # or source .venv/bin/activate on WSL
+     uvicorn api_server:app --reload --port 8000
+     ```
+   - STT engine:
+     ```bash
+     cd backend
+     .venv/Scripts/activate  # or source .venv/bin/activate on WSL
+     python stt_engine.py
+     ```
+   - Electron UI:
+     ```bash
+     cd app/electron-app
+     npm start
+     ```
+
+You can also follow the detailed manual steps below; the commands above are the minimum to get everything running.
 
 ---
 
@@ -16,31 +48,45 @@ The application features a **Stealth HUD** and **Brain Overlay** that are invisi
 
 ## 🔑 1. Environment Setup & API Keys
 
-Before installing the code, you need to generate API keys for the AI engines.
+Before installing the code, you need to generate API keys for the AI engines and configure the backend environment.
 
 ### A. Get API Keys
-1.  **Groq API Key** (for LLM & STT):
-    * Sign up at [Groq Console](https://console.groq.com/keys).
-    * Create a new API Key.
-2.  **Tavily API Key** (for real-time web search):
-    * Sign up at [Tavily](https://tavily.com/).
-    * Create a new API Key.
+1. **Groq API Key** (for LLM & STT):
+  * Sign up at [Groq Console](https://console.groq.com/keys).
+  * Create a new API Key.
+2. **Tavily API Key** (for real-time web search):
+  * Sign up at [Tavily](https://tavily.com/).
+  * Create a new API Key.
 
 ### B. Configure Environment Variables
-1.  Navigate to the `backend/` folder.
-2.  Create a file named `.env`.
-3.  Paste the following content and replace the placeholders with your actual keys:
+
+You can either let the setup script create a dummy `.env` for you, or create it manually.
+
+**Option 1 (Recommended) – Auto-generate via setup.sh**
+
+1. From the project root, run (in Git Bash, WSL, or any Bash shell):
+  ```bash
+  bash setup.sh
+  ```
+2. This will create `backend/.env` with dummy values. Open that file and replace the placeholders with your real keys.
+
+**Option 2 – Manual .env creation**
+
+1. Navigate to the `backend/` folder.
+2. Create a file named `.env`.
+3. Paste the following content and replace the placeholders with your actual keys:
 
 ```ini
 # backend/.env
 
 # API Keys
 GROQ_API_KEY=gsk_your_actual_groq_key_here
-TAVILY_API_KEY=tvly-your_actual_tavily_key_here
+TAVILY_API_KEY=tvly_your_actual_tavily_key_here
 
 # Configuration
-INTERVIEWAI_API_BASE=[http://127.0.0.1:8000](http://127.0.0.1:8000)
+INTERVIEWAI_API_BASE=http://127.0.0.1:8000
 WHISPER_LANGUAGE=en
+```
 
 -----
 
@@ -61,46 +107,87 @@ To let the AI "hear" the interviewer via your speakers/headphones, you must enab
 
 ## 📦 3. Installation Instructions
 
-### Part A: Backend Setup (Python)
+You can use the automated setup script (recommended) or follow the manual steps.
 
-1.  Open a terminal in the root project folder.
-2.  Navigate to the backend:
-    ```bash
-    cd backend
-    ```
-3.  Create a virtual environment:
-    ```bash
-    python -m venv .venv
-    ```
-4.  Activate the virtual environment:
-      * **PowerShell:** `.venv\Scripts\activate`
-      * **Git Bash:** `source .venv/Scripts/activate`
-5.  Install dependencies:
-    ```bash
-    pip install fastapi uvicorn[standard] groq tavily-python sounddevice numpy scipy python-dotenv requests websockets
-    ```
+### Option A (Recommended): Automated Setup via setup.sh
 
-### Part B: Frontend Setup (Electron)
+1. Open a Bash-capable terminal in the project root (Git Bash, WSL, etc.).
+2. Run:
+  ```bash
+  bash setup.sh
+  ```
+3. What this does:
+   - Creates `backend/.env` with dummy values (if it does not exist).
+   - Creates `backend/.venv` and installs Python dependencies (from `backend/requirements.txt` if present).
+   - Runs `npm install` in `app/electron-app` to install Electron dependencies.
+4. After it finishes, edit `backend/.env` to plug in your real API keys.
 
-1.  Open a **new** terminal.
-2.  Navigate to the electron app folder:
-    ```bash
-    cd app/electron-app
+### Option B: Manual Backend Setup (Python)
+
+1. Open a terminal in the root project folder.
+2. Navigate to the backend:
+  ```bash
+  cd backend
+  ```
+3. Create a virtual environment:
+  ```bash
+  python -m venv .venv
+  ```
+4. Activate the virtual environment:
+  - **PowerShell:**
+    ```powershell
+    .venv\Scripts\activate
     ```
-3.  Install Node.js dependencies (including `koffi` for native Windows hooks):
+  - **Git Bash / WSL:**
     ```bash
-    npm install
+    source .venv/Scripts/activate
     ```
-4.  Install Electron Forge CLI globally (optional but recommended):
-    ```bash
-    npm install -g @electron-forge/cli
-    ```
+5. Install dependencies (or just use `pip install -r requirements.txt` if you prefer):
+   ```bash
+   pip install fastapi uvicorn[standard] groq tavily-python sounddevice numpy scipy python-dotenv requests websockets
+   ```
+
+### Option C: Manual Frontend Setup (Electron)
+
+1. Open a **new** terminal.
+2. Navigate to the electron app folder:
+  ```bash
+  cd app/electron-app
+  ```
+3. Install Node.js dependencies (including `koffi` for native Windows hooks):
+  ```bash
+  npm install
+  ```
+4. Install Electron Forge CLI globally (optional but recommended):
+  ```bash
+  npm install -g @electron-forge/cli
+  ```
 
 -----
 
 ## 🚀 4. Running the Application
 
-To run the full system, you need to run **three separate processes** simultaneously. Open 3 terminal windows.
+After you have completed installation (preferably via `setup.sh`), you can run everything with a single command or start each process manually.
+
+### Quickstart: Run all services via start.sh
+
+From the project root, in a Bash-capable terminal:
+
+```bash
+bash start.sh
+```
+
+This script will:
+- Activate the backend virtual environment.
+- Start the FastAPI backend API server.
+- Start the STT engine.
+- Start the Electron UI.
+
+On Windows with Git Bash, it will attempt to open three separate terminal windows. If that is not possible in your environment, the processes will be started as background jobs in the current shell.
+
+### Manual / Advanced: Run each process yourself
+
+To run the full system manually, you need to run **three separate processes** simultaneously. Open 3 terminal windows.
 
 ### Terminal 1: Backend API Server
 
