@@ -139,6 +139,7 @@ Rules:
 - If the question is behavioral, use STAR-style implicitly but do NOT say "STAR".
 - If the question is vague, assume the most common interview interpretation.
 - If you need up-to-date technical information or current documentation, use the web_search tool.
+- Format every response as Markdown bullet points: 3–6 bullets starting with "- ", each kept to 1–2 sentences.
 """
 
 

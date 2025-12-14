@@ -71,7 +71,7 @@ else:
 TARGET_SR = 16000
 WINDOW = 4.5  # slightly longer window to reduce mid-sentence splits
 SHIFT = WINDOW * 0.55
-MIN_RMS = 0.015  # slightly stricter noise gate
+MIN_RMS = 0.003  # slightly stricter noise gate
 CHANNELS = 1
 
 MIN_WORDS = 2  # require some content to reduce noise snippets
@@ -169,7 +169,14 @@ def audio_callback(indata, frames, time_info, status):
         print("[AUDIO STATUS]", status)
 
     # 1. Get Audio & Filter
-    audio = indata[:, 0]
+    # Append audio to rolling buffer
+    audio = indata[:, 0]  # first channel
+
+    # Universal Fix: Digital Gain + Limiter
+    # Boosts quiet laptops (x5) and prevents distortion on loud ones (clip)
+    audio = audio * 5.0 
+    audio = np.clip(audio, -1.0, 1.0)
+
     audio = highpass_filter(audio, cutoff_hz=100.0, sr=DEVICE_SR)
 
     # 2. Calculate Energy (RMS)
