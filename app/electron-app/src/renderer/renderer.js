@@ -1,4 +1,4 @@
-import { marked } from 'marked';
+const { marked } = require('marked'); // Add this at the very top
 
 // Ensure the HUD is always interactive/draggable.
 const setupMouseEvents = () => {
@@ -263,6 +263,13 @@ const initHud = () => {
   const toastEl = document.getElementById('hud-toast');
   const hudShell = document.querySelector('.hud-shell');
 
+  // --- CLICK-THROUGH LOGIC ---
+  window.addEventListener('mousemove', (event) => {
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const isInteractive = element.closest('.brain-shell') || element.closest('.hud-shell') || element.tagName === 'BUTTON';
+    window.electronAPI.setIgnoreMouseEvents(!isInteractive, { forward: true });
+  });
+
   if (hudShell && window?.ResizeObserver) {
     const observer = new ResizeObserver((entries) => {
       entries.forEach((entry) => {
@@ -480,6 +487,14 @@ const initHud = () => {
     showToast('Answer ready.', 'success');
   });
 
+  // --- VISION UPGRADE LISTENER ---
+  analyzeButton?.addEventListener('click', () => {
+    logHud('Analyze Screen clicked');
+    window.electronAPI.openBrain();
+    // No text update here, handled by CSS state in Brain
+    window.electronAPI.analyzeScreen();
+  });
+
   transcriptEl?.addEventListener('input', () => {
     updateAnswerButtonState();
   });
@@ -640,6 +655,13 @@ const initBrain = () => {
     answerBuffer: '',
   };
 
+  // --- CLICK-THROUGH LOGIC ---
+  window.addEventListener('mousemove', (event) => {
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const isInteractive = element.closest('.brain-shell') || element.closest('.hud-shell') || element.tagName === 'BUTTON';
+    window.electronAPI.setIgnoreMouseEvents(!isInteractive, { forward: true });
+  });
+
   const attachCopyButtons = (root) => {
     if (!root) return;
     const blocks = root.querySelectorAll('pre');
@@ -760,16 +782,23 @@ const initBrain = () => {
 
   window.electronAPI?.onAnswerStream?.((payload = {}) => {
     const sessionId = payload.sessionId || 0;
-    if (sessionId && sessionId < state.sessionId) {
-      return;
-    }
-    const chunk = typeof payload === 'string' ? payload : payload.chunk || payload.text || '';
-    if (!chunk) {
-      return;
-    }
-    setStatus('Model answer streaming...', 'active');
-    updateStream(answerEl, 'answerBuffer', chunk, { markdown: true });
+    if (sessionId && sessionId < state.sessionId) return;
+    
+    const chunk = typeof payload === 'string' ? payload : payload.chunk || '';
+    if (!chunk) return;
+
+    // Remove loading spinner class if present
+    answerEl.classList.remove('is-thinking'); 
+    
+    state.answerBuffer += chunk;
+    // RENDER MARKDOWN
+    answerEl.innerHTML = marked.parse(state.answerBuffer);
+    
     setSectionState(answerStateEl, 'Answer streaming...', 'active');
+    // Auto-scroll logic
+    if (shouldStickToBottom(answerEl)) {
+      answerEl.scrollTop = answerEl.scrollHeight;
+    }
   });
 
   window.electronAPI?.onAnswerComplete?.((payload = {}) => {

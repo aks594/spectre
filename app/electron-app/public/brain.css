@@ -72,7 +72,7 @@ body {
   background: rgba(0, 0, 0, 0.92) !important;
   border: 1px solid #333;
   border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  box-shadow: none;
   backdrop-filter: blur(10px);
   display: flex;
   flex-direction: column;
@@ -525,4 +525,45 @@ body {
   :root {
     --hud-width: 800px;
   }
+}
+
+/* --- NEW ADDITIONS FOR MARKDOWN & LOADING --- */
+.answer-text p {
+  margin-bottom: 8px; /* Tighter spacing */
+  font-family: var(--font-family);
+  color: #cbd5e1;
+}
+
+.answer-text h2, .answer-text h3 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.answer-text pre {
+  background: #1e1e1e;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 10px 0;
+  border: 1px solid #3a3a3a;
+}
+
+.answer-text code {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #e0e0e0;
+}
+
+/* Loading Spinner (No text) */
+.answer-text.is-thinking::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #fbbf24;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
