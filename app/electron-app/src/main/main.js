@@ -38,6 +38,8 @@ let CachedWebSocketImpl;
 let isResizing = false;
 let currentHudHeight = 150;
 let brainIntendedState = false;
+// TODO: Always keep this TRUE
+let stealthEnabled = true;
 
 const sendToWindow = (targetWindow, channel, payload) => {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -92,14 +94,15 @@ const setWindowHiddenFromCapture = (browserWindow) => {
     // Robust pointer extraction for x64 vs x86
     let hWnd;
     if (Buffer.isBuffer(handle)) {
-        hWnd = process.arch === 'x64' 
-        ? handle.readBigInt64LE(0) 
+      hWnd = process.arch === 'x64'
+        ? handle.readBigInt64LE(0)
         : handle.readInt32LE(0);
     } else {
-        hWnd = handle;
+      hWnd = handle;
     }
 
-    const result = SetWindowDisplayAffinity(hWnd, 0x00000011);
+    const affinity = stealthEnabled ? 0x00000011 : 0x00000000;
+    const result = SetWindowDisplayAffinity(hWnd, affinity);
     if (!result) {
       console.warn(`[STEALTH] Failed to set affinity for window ID ${browserWindow.id}`);
     }
@@ -293,7 +296,7 @@ const createHudWindow = () => {
 
   // --- CRITICAL FIX: Force Highest Z-Level ---
   // 'screen-saver' level sits above normal 'always-on-top' windows (like Teams borders)
-  hudWindow.setAlwaysOnTop(true, 'screen-saver'); 
+  hudWindow.setAlwaysOnTop(true, 'screen-saver');
   hudWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   setWindowHiddenFromCapture(hudWindow);
@@ -348,7 +351,7 @@ ipcMain.handle('exit-app', () => {
 const createBrainWindow = () => {
   const { height } = screen.getPrimaryDisplay().workAreaSize;
   const brainWidth = Math.round(HUD_BASE_WIDTH * hudScale);
-  const brainHeight = Math.floor(height * 0.5);
+  const brainHeight = Math.floor(height * 0.85);
 
   brainWindow = new BrowserWindow({
     width: brainWidth,
@@ -367,7 +370,7 @@ const createBrainWindow = () => {
 
   brainWindow.setMenuBarVisibility(false);
   // Update this line to include 'screen-saver'
-  brainWindow.setAlwaysOnTop(true, 'screen-saver'); 
+  brainWindow.setAlwaysOnTop(true, 'screen-saver');
   brainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   brainWindow.loadURL(BRAIN_WINDOW_WEBPACK_ENTRY);
 
@@ -763,11 +766,11 @@ const registerIpcHandlers = () => {
     const bounds = brainWindow.getBounds();
     // Only update if height is different to avoid loops
     if (bounds.height !== height) {
-      brainWindow.setBounds({ 
-        x: bounds.x, 
-        y: bounds.y, 
-        width: bounds.width, 
-        height: height 
+      brainWindow.setBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: height
       });
     }
   });
@@ -795,7 +798,7 @@ const registerIpcHandlers = () => {
     if (!brainWindow || brainWindow.isDestroyed()) return;
     setWindowHiddenFromCapture(brainWindow);
     if (brainIntendedState) {
-       brainWindow.show();
+      brainWindow.show();
     }
   });
 
@@ -879,7 +882,7 @@ const registerIpcHandlers = () => {
 
       answerSessionId = sessionId;
       resetBrainStreams(sessionId, 'Screen analysis', 'Screen analysis');
-      sendToWindow(brainWindow, 'answer-stream', { chunk: 'Analyzing screenshot...', sessionId });
+      // sendToWindow(brainWindow, 'answer-stream', { chunk: 'Analyzing screenshot...', sessionId });
 
       await startVisionStream(imageBase64, WebSocketImpl, sessionId);
       return { status: 'started', sessionId };
@@ -930,6 +933,13 @@ const registerIpcHandlers = () => {
       activeAnswerSocket = null;
       return { status: 'error', message: error?.message || 'Unable to reach backend.' };
     }
+  });
+
+  ipcMain.handle('set-stealth-mode', (_event, enabled) => {
+    stealthEnabled = Boolean(enabled);
+    setWindowHiddenFromCapture(hudWindow);
+    setWindowHiddenFromCapture(brainWindow);
+    return stealthEnabled;
   });
 };
 

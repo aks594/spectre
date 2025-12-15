@@ -34,8 +34,9 @@
     "style-loader": "^3.3.4"
   },
   "dependencies": {
-    "marked": "^4.3.0",
     "electron-squirrel-startup": "^1.0.1",
-    "koffi": "^2.14.1"
+    "highlight.js": "^11.11.1",
+    "koffi": "^2.14.1",
+    "marked": "^4.3.0"
   }
 }

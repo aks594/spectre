@@ -1,4 +1,26 @@
+if (window.SPECTRE_RENDERER_RUNNING) {
+  console.warn('Renderer already running, skipping re-init.');
+  throw new Error('Renderer guard: prevent double-init');
+}
+window.SPECTRE_RENDERER_RUNNING = true;
+
 const { marked } = require('marked'); // Add this at the very top
+const hljs = require('highlight.js');
+
+const DEFAULT_CODE_LANGUAGE = 'plaintext';
+
+marked.setOptions({
+  breaks: true,
+  highlight(code, lang) {
+    const language = lang && hljs.getLanguage(lang) ? lang : DEFAULT_CODE_LANGUAGE;
+    try {
+      return hljs.highlight(code, { language }).value;
+    } catch (error) {
+      console.warn('Code highlight failed, falling back to plaintext.', error);
+      return hljs.highlight(code, { language: DEFAULT_CODE_LANGUAGE }).value;
+    }
+  },
+});
 
 // Ensure the HUD is always interactive/draggable.
 const setupMouseEvents = () => {
@@ -208,6 +230,128 @@ const extractLikelyQuestion = (text) => {
   return normalizeText(fallback);
 };
 
+const dedupeSentences = (text = '') => {
+  const segments = text.match(/[^.?!]+[.?!]?/g) || [text];
+  const seen = new Set();
+  const result = [];
+  segments.forEach((segment) => {
+    const trimmed = normalizeText(segment);
+    if (!trimmed) {
+      return;
+    }
+    const fingerprint = trimmed.toLowerCase();
+    if (seen.has(fingerprint)) {
+      return;
+    }
+    seen.add(fingerprint);
+    result.push(trimmed);
+  });
+  return result.join(' ').trim();
+};
+
+const ANSWER_SECTION_ORDER = ['Intuition', 'Algorithm', 'Implementation', 'Complexity Analysis'];
+const ANSWER_HEADING_LOOKUP = {
+  intuition: 'Intuition',
+  algorithm: 'Algorithm',
+  implementation: 'Implementation',
+  complexityanalysis: 'Complexity Analysis',
+  complexity: 'Complexity Analysis',
+};
+
+const normalizeHeadingToken = (value = '') => value.toLowerCase().replace(/[^a-z]/g, '');
+
+const sanitizeAnswerMarkdown = (markdown = '') => {
+  if (!markdown) {
+    return '';
+  }
+
+  const lines = markdown.split(/\r?\n/);
+  const buckets = { preamble: [] };
+  let currentSection = 'preamble';
+  const seen = new Set();
+  let hardStop = false;
+  let skipBody = false;
+
+  const pushLine = (section, line) => {
+    if (!section || section === 'skip') return;
+    if (!buckets[section]) buckets[section] = [];
+    buckets[section].push(line);
+  };
+
+  for (const rawLine of lines) {
+    if (hardStop) break;
+
+    const trimmed = rawLine.trim();
+    const headingMatch = trimmed.match(/^#{1,6}\s*(.+)$/);
+    if (headingMatch) {
+      const headingText = headingMatch[1] || '';
+      const firstToken = headingText.split(/\s+/)[0] || headingText;
+      let normalized = normalizeHeadingToken(firstToken);
+      let canonical = ANSWER_HEADING_LOOKUP[normalized];
+      if (!canonical) {
+        // Try prefix matching (handles cases like "Complexity Analysis:The" or missing space)
+        const fallbackKey = Object.keys(ANSWER_HEADING_LOOKUP).find((key) => normalized.startsWith(key));
+        if (fallbackKey) {
+          canonical = ANSWER_HEADING_LOOKUP[fallbackKey];
+        }
+      }
+
+      if (canonical) {
+        if (seen.has('Complexity Analysis') && canonical !== 'Complexity Analysis') {
+          hardStop = true;
+          break;
+        }
+        if (seen.has(canonical)) {
+          // Skip duplicate section content
+          skipBody = true;
+          currentSection = 'skip';
+          continue;
+        }
+
+        seen.add(canonical);
+        currentSection = canonical;
+        skipBody = false;
+        if (!buckets[currentSection]) buckets[currentSection] = [];
+
+        // If heading line contains inline body, keep the body text
+        const bodyPart = headingText.split(/\s+/, 2)[1];
+        if (bodyPart) {
+          pushLine(currentSection, bodyPart.trim());
+        }
+        continue;
+      }
+    }
+
+    if (skipBody) {
+      // Ignore lines until next recognized heading
+      continue;
+    }
+
+    pushLine(currentSection, rawLine);
+  }
+
+  const blocks = [];
+  const preamble = (buckets.preamble || []).join('\n').trim();
+  if (preamble) {
+    blocks.push(preamble);
+  }
+
+  ANSWER_SECTION_ORDER.forEach((heading) => {
+    const content = (buckets[heading] || []).join('\n').trim();
+    if (!content) return;
+    blocks.push(`## ${heading}\n${content}`);
+    if (heading === 'Complexity Analysis') {
+      // Enforce stop after final section
+      hardStop = true;
+    }
+  });
+
+  const sanitized = blocks.join('\n\n').trim();
+  return sanitized || markdown.trim();
+};
+
+const sanitizeSummaryText = (text = '') => dedupeSentences(text);
+
 const buildCleanedQuestion = (rawTranscript) => {
   if (!rawTranscript) {
     return '';
@@ -266,6 +410,8 @@ const initHud = () => {
   // --- CLICK-THROUGH LOGIC ---
   window.addEventListener('mousemove', (event) => {
     const element = document.elementFromPoint(event.clientX, event.clientY);
+    if (!element) return; // <--- FIX: Prevents "Cannot read properties of null" error
+    
     const isInteractive = element.closest('.brain-shell') || element.closest('.hud-shell') || element.tagName === 'BUTTON';
     window.electronAPI.setIgnoreMouseEvents(!isInteractive, { forward: true });
   });
@@ -658,6 +804,8 @@ const initBrain = () => {
   // --- CLICK-THROUGH LOGIC ---
   window.addEventListener('mousemove', (event) => {
     const element = document.elementFromPoint(event.clientX, event.clientY);
+    if (!element) return; // <--- FIX: Prevents "Cannot read properties of null" error
+
     const isInteractive = element.closest('.brain-shell') || element.closest('.hud-shell') || element.tagName === 'BUTTON';
     window.electronAPI.setIgnoreMouseEvents(!isInteractive, { forward: true });
   });
@@ -710,11 +858,12 @@ const initBrain = () => {
     if (!container || !chunk) return;
     const stick = shouldStickToBottom(container);
     state[bufferKey] = `${state[bufferKey]}${chunk}`;
-    const { markdown = false } = options;
+    const { markdown = false, sanitizer } = options;
+    const displayValue = sanitizer ? sanitizer(state[bufferKey]) : state[bufferKey];
     if (markdown) {
-      container.innerHTML = renderMarkdown(state[bufferKey]);
+      container.innerHTML = renderMarkdown(displayValue);
     } else {
-      container.textContent = state[bufferKey];
+      container.textContent = displayValue;
     }
     attachCopyButtons(container);
     if (stick) {
@@ -739,6 +888,7 @@ const initBrain = () => {
       answerEl.innerHTML = '';
       answerEl.scrollTop = 0;
       answerEl.classList.remove('brain-stream--complete', 'brain-stream--error');
+      answerEl.classList.add('is-thinking');
     }
     setStatus('Summarising interviewer question...', 'active');
     setSectionState(questionStateEl, 'Summarising interviewer question...', 'active');
@@ -759,7 +909,7 @@ const initBrain = () => {
       return;
     }
     console.log('[BRAIN] Question chunk received:', chunk);
-    updateStream(questionEl, 'questionBuffer', chunk);
+    updateStream(questionEl, 'questionBuffer', chunk, { sanitizer: sanitizeSummaryText });
     setSectionState(questionStateEl, 'Summarising interviewer question...', 'active');
   });
 
@@ -788,17 +938,15 @@ const initBrain = () => {
     if (!chunk) return;
 
     // Remove loading spinner class if present
-    answerEl.classList.remove('is-thinking'); 
-    
-    state.answerBuffer += chunk;
-    // RENDER MARKDOWN
-    answerEl.innerHTML = marked.parse(state.answerBuffer);
-    
+    answerEl.classList.remove('is-thinking');
+
+    updateStream(answerEl, 'answerBuffer', chunk, {
+      markdown: true,
+      sanitizer: sanitizeAnswerMarkdown,
+    });
+
     setSectionState(answerStateEl, 'Answer streaming...', 'active');
     // Auto-scroll logic
-    if (shouldStickToBottom(answerEl)) {
-      answerEl.scrollTop = answerEl.scrollHeight;
-    }
   });
 
   window.electronAPI?.onAnswerComplete?.((payload = {}) => {

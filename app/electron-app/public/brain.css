@@ -69,7 +69,7 @@ body {
   box-sizing: border-box;
   max-height: 92vh;
   /* UPDATED: Black with little transparency */
-  background: rgba(0, 0, 0, 0.92) !important;
+  background: rgba(0, 0, 0, 0.68) !important;
   border: 1px solid #333;
   border-radius: 12px;
   box-shadow: none;
@@ -77,6 +77,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  font-family: var(--font-family);
+  font-size: 15px;
 }
 
 .brain-header {
@@ -86,7 +88,7 @@ body {
   gap: 12px;
   padding: 14px 18px 12px;
   border-bottom: none;
-  background: transparent;
+  background: rgba(18, 18, 18, 0.6);
 }
 
 .brand-row {
@@ -286,21 +288,26 @@ body {
 
 .brain-content {
   flex: 1;
-  padding: 14px 18px;
+  padding: 4px 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   overflow-y: auto;
-  background: #121212;
+  background: rgba(18, 18, 18, 0.6);
 }
 
 .content-block {
-  padding: 12px 0;
+  padding: 0;
   background: transparent;
   border: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+}
+
+/* Extra separation between question block and answer block only */
+.content-block:first-of-type {
+  margin-bottom: 16px;
 }
 
 .label-row {
@@ -308,9 +315,11 @@ body {
   align-items: center;
   gap: 8px;
   color: #94a3b8;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  margin-bottom: 2px;
+  font-family: var(--font-family);
 }
 
 .answer-label {
@@ -319,32 +328,34 @@ body {
 
 .text-content {
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.22;
   white-space: pre-wrap;
   word-wrap: break-word;
+  font-family: var(--font-family);
 }
 
 .question-text {
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 400;
   font-size: 15px;
-  margin-left: 24px;
+  line-height: 1.22;
+  margin-left: 4px;
 }
 
 .answer-text {
   color: #cbd5e1;
-  font-size: 14px;
-  line-height: 1.6;
-  margin-left: 24px;
+  font-size: 15px;
+  line-height: 1.22;
+  margin-left: 4px;
   font-family: var(--font-family);
 }
 
 .answer-text code,
 .answer-text pre {
   font-family: var(--mono);
-  background: #2a2a2a;
-  color: #ffffff;
-  border: 1px solid #3a3a3a;
+  background: transparent;
+  color: inherit;
+  border: none;
   border-radius: 10px;
 }
 
@@ -354,32 +365,34 @@ body {
 
 .answer-text pre {
   position: relative;
-  padding: 14px;
+  padding: 4px 6px;
   overflow: auto;
-  margin: 10px 0;
+  margin: 2px 0;
 }
 
 .code-copy-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 6px;
-  background: #000;
-  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  color: #abb2bf;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  opacity: 0.9;
+  opacity: 0.7;
+  transition: all 0.2s ease;
 }
 
 .code-copy-btn:hover {
   opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .answer-text ul {
@@ -393,16 +406,80 @@ body {
 
 /* Markdown-rendered content styling */
 .answer-text pre {
-  background: #161616 !important;
-  padding: 12px;
+  background: #181c22 !important;
+  padding: 12px 14px;
   border-radius: 8px;
   overflow-x: auto;
+  border: 1px solid #2a2d35;
+  position: relative;
 }
 
 .answer-text pre code {
-  font-family: 'Fira Code', monospace;
+  font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 13px;
-  color: #e06c75;
+  line-height: 1.5;
+  color: #d4d4d4;
+  display: block;
+}
+
+.answer-text pre code.hljs {
+  color: #d4d4d4;
+  background: transparent;
+}
+
+.answer-text pre .hljs-comment,
+.answer-text pre .hljs-quote {
+  color: #6a9955;
+  font-style: italic;
+}
+
+.answer-text pre .hljs-keyword,
+.answer-text pre .hljs-selector-tag,
+.answer-text pre .hljs-built_in,
+.answer-text pre .hljs-literal,
+.answer-text pre .hljs-meta,
+.answer-text pre .hljs-meta .hljs-keyword,
+.answer-text pre .hljs-doctag {
+  color: #569cd6;
+}
+
+.answer-text pre .hljs-number,
+.answer-text pre .hljs-attr,
+.answer-text pre .hljs-template-variable,
+.answer-text pre .hljs-variable,
+.answer-text pre .hljs-attribute,
+.answer-text pre .hljs-selector-attr {
+  color: #b5cea8;
+}
+
+.answer-text pre .hljs-string,
+.answer-text pre .hljs-title,
+.answer-text pre .hljs-name,
+.answer-text pre .hljs-selector-id,
+.answer-text pre .hljs-selector-class,
+.answer-text pre .hljs-template-tag {
+  color: #ce9178;
+}
+
+.answer-text pre .hljs-symbol,
+.answer-text pre .hljs-bullet,
+.answer-text pre .hljs-link,
+.answer-text pre .hljs-subst {
+  color: #dcdcaa;
+}
+
+.answer-text pre .hljs-type,
+.answer-text pre .hljs-class .hljs-title,
+.answer-text pre .hljs-function .hljs-title {
+  color: #4ec9b0;
+}
+
+.answer-text pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.answer-text pre .hljs-strong {
+  font-weight: 600;
 }
 
 /* Fix inline code snippets (like variable names) */
@@ -423,7 +500,7 @@ body {
 .answer-text h2 {
   color: #ffffff;
   font-weight: 700;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .brain-stream--complete {
@@ -527,27 +604,47 @@ body {
   }
 }
 
-/* --- NEW ADDITIONS FOR MARKDOWN & LOADING --- */
 .answer-text p {
-  margin-bottom: 8px; /* Tighter spacing */
-  font-family: var(--font-family);
-  color: #cbd5e1;
+  margin-top: 0 !important;
+  margin-bottom: 1px !important;
+  line-height: 1.26;
 }
 
-.answer-text h2, .answer-text h3 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  font-weight: 700;
-  color: #ffffff;
+.answer-text h2 {
+  margin-top: 2px !important;
+  margin-bottom: 0px !important;
+  font-size: 16px;
+  color: #fff;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.answer-text h3 {
+  margin-top: 2px !important;
+  margin-bottom: 0px !important;
+  font-size: 14px;
+  color: #e5e5e5;
+}
+
+.answer-text ul, .answer-text ol {
+  margin-top: 0px !important;
+  margin-bottom: 2px !important;
+  padding-left: 18px;
+}
+
+.answer-text li {
+  margin-bottom: 1px !important;
+  line-height: 1.32;
 }
 
 .answer-text pre {
-  background: #1e1e1e;
-  padding: 12px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 10px 0;
-  border: 1px solid #3a3a3a;
+  margin: 8px 0 !important;
+  background: #181c22 !important;
+}
+
+/* Hide empty elements that might be taking up space */
+.answer-text p:empty {
+  display: none;
 }
 
 .answer-text code {
