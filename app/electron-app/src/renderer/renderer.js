@@ -1,3 +1,5 @@
+import { marked } from 'marked';
+
 // Ensure the HUD is always interactive/draggable.
 const setupMouseEvents = () => {
   if (window?.electronAPI?.setIgnoreMouseEvents) {
@@ -68,19 +70,11 @@ let brainStylesPromise;
 const renderMarkdown = (markdown) => {
   const safe = typeof markdown === 'string' ? markdown : '';
   try {
-    if (typeof window !== 'undefined' && window.marked && typeof window.marked.parse === 'function') {
-      return window.marked.parse(safe);
-    }
-    if (typeof globalThis !== 'undefined' && globalThis.marked && typeof globalThis.marked.parse === 'function') {
-      return globalThis.marked.parse(safe);
-    }
-    return safe;
+    // Directly use the imported library
+    return marked.parse(safe);
   } catch (e) {
-    const escaped = safe
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return escaped.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>').replace(/\n/g, '<br>');
+    console.error('Markdown rendering failed', e);
+    return safe;
   }
 };
 
