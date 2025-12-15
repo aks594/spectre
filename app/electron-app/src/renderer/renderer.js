@@ -65,6 +65,25 @@ const FILLER_REGEX = new RegExp(
 let hudStylesPromise;
 let brainStylesPromise;
 
+const renderMarkdown = (markdown) => {
+  const safe = typeof markdown === 'string' ? markdown : '';
+  try {
+    if (typeof window !== 'undefined' && window.marked && typeof window.marked.parse === 'function') {
+      return window.marked.parse(safe);
+    }
+    if (typeof globalThis !== 'undefined' && globalThis.marked && typeof globalThis.marked.parse === 'function') {
+      return globalThis.marked.parse(safe);
+    }
+    return safe;
+  } catch (e) {
+    const escaped = safe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return escaped.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>').replace(/\n/g, '<br>');
+  }
+};
+
 const ensureHudStyles = () => {
   if (!hudStylesPromise) {
     hudStylesPromise = import('../../public/hud.css');
@@ -235,6 +254,7 @@ const initHud = () => {
   const statusDot = document.getElementById('ws-status-dot');
   const statusLabel = document.getElementById('ws-status-label');
   const answerButton = document.getElementById('answer-btn');
+  const analyzeButton = document.getElementById('analyze-btn');
   const stopButton = document.getElementById('stop-btn');
   const hideButton = document.getElementById('hide-btn');
   const hudToggle = document.getElementById('hud-toggle');
@@ -514,6 +534,28 @@ const initHud = () => {
     }
   });
 
+  analyzeButton?.addEventListener('click', async () => {
+    if (analyzeButton.classList.contains('is-busy')) {
+      return;
+    }
+    analyzeButton.classList.add('is-busy');
+    analyzeButton.disabled = true;
+    try {
+      showToast('Capturing screen...', 'info');
+      const response = await window.electronAPI?.analyzeScreen?.();
+      if (response?.status === 'error') {
+        showToast(response.message || 'Screen analysis failed.', 'error');
+      } else {
+        showToast('Analyzing screenshot...', 'info');
+      }
+    } catch (error) {
+      showToast(error?.message || 'Screen analysis failed.', 'error');
+    } finally {
+      analyzeButton.disabled = false;
+      analyzeButton.classList.remove('is-busy');
+    }
+  });
+
   stopButton?.addEventListener('click', () => {
     if (answerInProgress) {
       logHud('Listening is locked while answer streams.');
@@ -648,11 +690,16 @@ const initBrain = () => {
     return container.scrollHeight - container.clientHeight - container.scrollTop < 28;
   };
 
-  const updateStream = (container, bufferKey, chunk) => {
+  const updateStream = (container, bufferKey, chunk, options = {}) => {
     if (!container || !chunk) return;
     const stick = shouldStickToBottom(container);
     state[bufferKey] = `${state[bufferKey]}${chunk}`;
-    container.textContent = state[bufferKey];
+    const { markdown = false } = options;
+    if (markdown) {
+      container.innerHTML = renderMarkdown(state[bufferKey]);
+    } else {
+      container.textContent = state[bufferKey];
+    }
     attachCopyButtons(container);
     if (stick) {
       container.scrollTop = container.scrollHeight;
@@ -673,7 +720,7 @@ const initBrain = () => {
       questionEl.classList.remove('brain-stream--complete');
     }
     if (answerEl) {
-      answerEl.textContent = '';
+      answerEl.innerHTML = '';
       answerEl.scrollTop = 0;
       answerEl.classList.remove('brain-stream--complete', 'brain-stream--error');
     }
@@ -727,7 +774,7 @@ const initBrain = () => {
       return;
     }
     setStatus('Model answer streaming...', 'active');
-    updateStream(answerEl, 'answerBuffer', chunk);
+    updateStream(answerEl, 'answerBuffer', chunk, { markdown: true });
     setSectionState(answerStateEl, 'Answer streaming...', 'active');
   });
 

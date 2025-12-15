@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWsDisconnected: (callback) => subscribe('ws-disconnected', callback),
   toggleListening: (value) => ipcRenderer.invoke('toggle-listening', Boolean(value)),
   startAnswer: (payload) => ipcRenderer.invoke('start-answer', payload),
+  analyzeScreen: () => ipcRenderer.invoke('analyze-screen'),
   requestSttStatus: () => ipcRenderer.invoke('stt-status-request'),
   onSttStatus: (callback) => subscribe('stt-status', callback),
   onQuestionStream: (callback) => subscribe('question-stream', callback),

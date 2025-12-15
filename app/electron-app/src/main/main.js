@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, net } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, net, desktopCapturer } = require('electron');
 const koffi = require('koffi');
 
 // --- CRITICAL FIXES FOR TEAMS/SCREEN SHARE CRASH ---
@@ -22,6 +22,7 @@ const HUD_BASE_WIDTH = 800;
 const HUD_BASE_HEIGHT = 220;
 const GAP_BETWEEN_WINDOWS = 3;
 const ASK_WS_URL = 'ws://localhost:8000/ws/ask';
+const VISION_WS_URL = 'ws://localhost:8000/ws/analyze';
 const STT_WS_URL = process.env.INTERVIEWAI_STT_WS || 'ws://localhost:8000/ws/stt';
 let hudScale = 1;
 let hudListeningState = true;
@@ -43,6 +44,30 @@ const sendToWindow = (targetWindow, channel, payload) => {
     return;
   }
   targetWindow.webContents.send(channel, payload);
+};
+
+const capturePrimaryDisplayBase64 = async () => {
+  const primary = screen.getPrimaryDisplay();
+  const targetWidth = 1080;
+  const targetHeight = Math.max(1, Math.round((primary.size.height / primary.size.width) * targetWidth));
+
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: targetWidth, height: targetHeight },
+  });
+
+  const matched = sources.find((source) => String(source.display_id) === String(primary.id)) || sources[0];
+  if (!matched) {
+    throw new Error('Unable to locate primary display.');
+  }
+
+  const { thumbnail } = matched;
+  if (!thumbnail || thumbnail.isEmpty()) {
+    throw new Error('Failed to capture screen thumbnail.');
+  }
+
+  const jpegBuffer = thumbnail.toJPEG(80);
+  return jpegBuffer.toString('base64');
 };
 
 // --- GLOBAL NATIVE SETUP (Optimized) ---
@@ -585,6 +610,102 @@ const startAnswerStream = ({ transcript, cleanedQuestion, metadata }, WebSocketI
   return sessionId;
 };
 
+const startVisionStream = (imageBase64, WebSocketImpl, sessionId) => {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocketImpl(VISION_WS_URL);
+    let finished = false;
+    let summarySent = false;
+
+    const complete = (status, error) => {
+      if (finished) return;
+      finished = true;
+      sendToWindow(brainWindow, 'answer-complete', { status, error, sessionId });
+      try {
+        if (typeof socket.close === 'function') {
+          socket.close();
+        }
+      } catch (closeError) {
+        console.error('[VISION] close error', closeError);
+      }
+      if (status === 'done') {
+        resolve();
+      } else {
+        reject(new Error(error || 'Vision stream failed'));
+      }
+    };
+
+    const wire = (eventName, handler) => {
+      if (typeof socket.on === 'function') {
+        socket.on(eventName, handler);
+      } else if (typeof socket.addEventListener === 'function') {
+        socket.addEventListener(eventName, handler);
+      } else {
+        socket[`on${eventName}`] = handler;
+      }
+    };
+
+    wire('open', () => {
+      try {
+        socket.send(JSON.stringify({ image_base64: imageBase64 }));
+      } catch (error) {
+        complete('error', error?.message || 'Failed to send image');
+      }
+    });
+
+    wire('message', (eventOrData) => {
+      const raw = typeof eventOrData === 'string'
+        ? eventOrData
+        : typeof eventOrData?.data !== 'undefined'
+          ? eventOrData.data
+          : Buffer.isBuffer(eventOrData)
+            ? eventOrData.toString('utf8')
+            : '';
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        parsed = { type: 'answer', chunk: raw };
+      }
+      const kind = parsed.type || parsed.channel || parsed.role || 'answer';
+      const chunk = parsed.chunk || parsed.text || parsed.summary || parsed.answer || '';
+
+      if (kind === 'error') {
+        complete('error', parsed.error || chunk || 'Vision backend error');
+        return;
+      }
+      if (kind === 'summary') {
+        summarySent = true;
+        sendToWindow(brainWindow, 'question-stream', { chunk, sessionId });
+        sendToWindow(brainWindow, 'question-complete', { sessionId });
+        return;
+      }
+      if (kind === 'answer') {
+        sendToWindow(brainWindow, 'answer-stream', { chunk, sessionId });
+        return;
+      }
+      if (kind === 'end') {
+        complete('done');
+        return;
+      }
+
+      // Fallback: if no kind recognized, treat as answer
+      if (chunk) {
+        sendToWindow(brainWindow, 'answer-stream', { chunk, sessionId });
+      }
+    });
+
+    wire('error', (error) => {
+      complete('error', error?.message || 'Vision connection error');
+    });
+
+    wire('close', () => {
+      if (!finished) {
+        complete('error', 'Vision connection closed unexpectedly');
+      }
+    });
+  });
+};
+
 const registerIpcHandlers = () => {
   ipcMain.on('start-resize', () => {
     // Placeholder hook to align with renderer handshake; actual sizing is handled in perform-resize.
@@ -721,6 +842,55 @@ const registerIpcHandlers = () => {
     hudListeningState = Boolean(value);
     console.log('[IPC] HUD listening set to', hudListeningState);
     return hudListeningState;
+  });
+
+  ipcMain.handle('analyze-screen', async () => {
+    const hudWasVisible = Boolean(hudWindow && !hudWindow.isDestroyed() && hudWindow.isVisible());
+    const brainWasVisible = Boolean(brainWindow && !brainWindow.isDestroyed() && brainWindow.isVisible());
+    const WebSocketImpl = resolveWebSocketImpl();
+    if (!WebSocketImpl) {
+      return { status: 'error', message: 'WebSocket support unavailable in Electron main process.' };
+    }
+    let sessionId = answerSessionId + 1;
+
+    const restoreWindows = () => {
+      if (hudWasVisible && hudWindow && !hudWindow.isDestroyed() && !hudWindow.isVisible()) {
+        hudWindow.show();
+      }
+      if (brainWasVisible && brainWindow && !brainWindow.isDestroyed() && !brainWindow.isVisible()) {
+        brainWindow.show();
+      }
+    };
+
+    try {
+      if (hudWindow && !hudWindow.isDestroyed()) {
+        hudWindow.hide();
+      }
+      if (brainWindow && !brainWindow.isDestroyed()) {
+        brainWindow.hide();
+      }
+
+      const imageBase64 = await capturePrimaryDisplayBase64();
+
+      restoreWindows();
+
+      brainIntendedState = true;
+      ensureBrainWindowVisible();
+
+      answerSessionId = sessionId;
+      resetBrainStreams(sessionId, 'Screen analysis', 'Screen analysis');
+      sendToWindow(brainWindow, 'answer-stream', { chunk: 'Analyzing screenshot...', sessionId });
+
+      await startVisionStream(imageBase64, WebSocketImpl, sessionId);
+      return { status: 'started', sessionId };
+    } catch (error) {
+      const message = error?.message || 'Failed to analyze screen.';
+      sendToWindow(brainWindow, 'answer-stream', { chunk: message, sessionId });
+      sendToWindow(brainWindow, 'answer-complete', { status: 'error', error: message, sessionId });
+      return { status: 'error', message };
+    } finally {
+      restoreWindows();
+    }
   });
 
   ipcMain.handle('start-answer', async (_event, payload = {}) => {

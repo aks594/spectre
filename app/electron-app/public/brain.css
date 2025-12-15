@@ -300,6 +300,31 @@ body { background: transparent !important; }
 .answer-text ul { padding-left: 18px; margin: 8px 0; }
 .answer-text li { margin: 4px 0; }
 
+/* Markdown-rendered content styling */
+.answer-text pre {
+  background: #1e1e1e;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.answer-text pre code {
+  font-family: 'Fira Code', monospace;
+}
+
+.answer-text p,
+.answer-text li,
+.answer-text h2 {
+  font-family: 'Inter', sans-serif;
+  color: #cbd5e1;
+}
+
+.answer-text h2 {
+  color: #ffffff;
+  font-weight: 700;
+  margin-top: 16px;
+}
+
 .brain-stream--complete { border-left: 3px solid var(--border-strong); padding-left: 13px; }
 .brain-stream--error { border-left: 3px solid #ef4444; color: #fecdd3; }
 

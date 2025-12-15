@@ -19,13 +19,13 @@ For the fastest path from clone to running app:
    - Backend API:
      ```bash
      cd backend
-     .venv/Scripts/activate  # or source .venv/bin/activate on WSL
+     .venv/Scripts/activate  # or source .venv/Scripts/activate on WSL
      uvicorn api_server:app --reload --port 8000
      ```
    - STT engine:
      ```bash
      cd backend
-     .venv/Scripts/activate  # or source .venv/bin/activate on WSL
+     .venv/Scripts/activate  # or source .venv/Scripts/activate on WSL
      python stt_engine.py
      ```
    - Electron UI:
@@ -167,27 +167,7 @@ You can use the automated setup script (recommended) or follow the manual steps.
 
 ## 🚀 4. Running the Application
 
-After you have completed installation (preferably via `setup.sh`), you can run everything with a single command or start each process manually.
-
-### Quickstart: Run all services via start.sh
-
-From the project root, in a Bash-capable terminal:
-
-```bash
-bash start.sh
-```
-
-This script will:
-- Activate the backend virtual environment.
-- Start the FastAPI backend API server.
-- Start the STT engine.
-- Start the Electron UI.
-
-On Windows with Git Bash, it will attempt to open three separate terminal windows. If that is not possible in your environment, the processes will be started as background jobs in the current shell.
-
-### Manual / Advanced: Run each process yourself
-
-To run the full system manually, you need to run **three separate processes** simultaneously. Open 3 terminal windows.
+After you have completed installation (preferably via `setup.sh`), you run the system by starting three separate processes in parallel. Open 3 terminal windows.
 
 ### Terminal 1: Backend API Server
 

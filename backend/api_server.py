@@ -18,6 +18,7 @@ from llm_pipeline import (
     summarize_resume,
     summarize_jd,
     stream_answer,
+    stream_vision_answer,
 )
 from services.llm_service import (
     generate_stream_answer,
@@ -55,6 +56,10 @@ class InitSessionRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+
+
+class AnalyzeRequest(BaseModel):
+    image_base64: str
 
 
 # ---------- ROUTES ----------
@@ -112,6 +117,24 @@ def _answer_stream_gen(question: str) -> Generator[bytes, None, None]:
         yield chunk.encode("utf-8")
 
 
+def _vision_stream_gen(image_base64: str) -> Generator[bytes, None, None]:
+    """Wraps stream_vision_answer() and yields bytes chunks for StreamingResponse."""
+    global CURRENT_SESSION
+
+    session = CURRENT_SESSION or SessionState(
+        company="General",
+        role="General",
+        jd_summary="",
+        resume_summary="",
+        extra_instructions="",
+    )
+
+    for chunk in stream_vision_answer(image_base64, session):
+        if not chunk:
+            continue
+        yield chunk.encode("utf-8")
+
+
 @app.post("/ask")
 def ask(req: AskRequest):
     """
@@ -126,6 +149,85 @@ def ask(req: AskRequest):
         _answer_stream_gen(req.question.strip()),
         media_type="text/plain",
     )
+
+
+@app.post("/analyze")
+def analyze(req: AnalyzeRequest):
+    """Stream a vision-based answer for a screenshot encoded as base64."""
+    image_data = (req.image_base64 or "").strip()
+    if not image_data:
+        raise HTTPException(status_code=400, detail="image_base64 cannot be empty.")
+
+    return StreamingResponse(
+        _vision_stream_gen(image_data),
+        media_type="text/plain",
+    )
+
+
+@app.websocket("/ws/analyze")
+async def ws_analyze(websocket: WebSocket):
+    """Streams summary and answer for screen analysis via vision model."""
+    await websocket.accept()
+
+    async def _send_error(message: str) -> None:
+        await websocket.send_json({"type": "error", "error": message})
+
+    try:
+        payload = await websocket.receive_json()
+        image_base64 = (payload.get("image_base64") or payload.get("image") or "").strip()
+        if not image_base64:
+            await _send_error("image_base64 cannot be empty.")
+            return
+
+        session = CURRENT_SESSION or SessionState(
+            company="General",
+            role="General",
+            jd_summary="",
+            resume_summary="",
+            extra_instructions="",
+        )
+
+        buffer = ""
+        summary_sent = False
+        separator = "---SPLIT---"
+
+        try:
+            for chunk in stream_vision_answer(image_base64, session):
+                if not chunk:
+                    continue
+                if not summary_sent:
+                    buffer += chunk
+                    sep_idx = buffer.find(separator)
+                    if sep_idx != -1:
+                        summary_text = buffer[:sep_idx].strip()
+                        remainder = buffer[sep_idx + len(separator):].lstrip()
+                        summary_sent = True
+                        if summary_text:
+                            await websocket.send_json({"type": "summary", "chunk": summary_text})
+                        if remainder:
+                            await websocket.send_json({"type": "answer", "chunk": remainder})
+                    continue
+                await websocket.send_json({"type": "answer", "chunk": chunk})
+        except Exception as stream_error:
+            await _send_error(str(stream_error) or "Vision stream failed")
+            return
+
+        if not summary_sent:
+            text = buffer.strip()
+            if text:
+                await websocket.send_json({"type": "summary", "chunk": text})
+
+        await websocket.send_json({"type": "end", "status": "done"})
+
+    except WebSocketDisconnect:
+        return
+    except Exception as e:
+        await _send_error(str(e) or "Backend error")
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 @app.websocket("/ws/ask")
 async def ws_ask(websocket: WebSocket):

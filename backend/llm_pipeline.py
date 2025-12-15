@@ -22,6 +22,7 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
 
 MODEL_NAME = "llama-3.3-70b-versatile"
+VISION_MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 tools = [
     {
@@ -317,6 +318,69 @@ def stream_answer(session: SessionState, question: str) -> Generator[str, None, 
     full_answer = full_answer.strip()
     session.add_memory(question, full_answer)
     return full_answer
+
+
+def stream_vision_answer(image_data_base64: str, session: SessionState) -> Generator[str, None, str]:
+    """Stream a vision answer for a base64-encoded screenshot."""
+    if not image_data_base64 or not image_data_base64.strip():
+        raise ValueError("Image data is required for vision analysis.")
+
+    prompt = """
+You are a senior software engineer. Always respond in exactly two parts with the exact delimiter "---SPLIT---" between them.
+
+Part 1 (before the delimiter): One concise sentence that summarizes the core problem or question shown in the image.
+---SPLIT---
+Part 2 (after the delimiter): A detailed technical solution using exactly these Markdown headers in this order:
+## Intuition
+## Algorithm
+## Implementation
+```<language>
+<code here>
+```
+## Complexity Analysis
+
+Session context (use only if relevant):
+- Company: {company}
+- Role: {role}
+- Extra instructions: {extra}
+""".format(
+        company=session.company,
+        role=session.role,
+        extra=session.extra_instructions or "None",
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": "Provide succinct, actionable answers. Use bullet points only if the content clearly benefits from it.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt.strip()},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_data_base64.strip()}"},
+                },
+            ],
+        },
+    ]
+
+    stream = groq_client.chat.completions.create(
+        model=VISION_MODEL_NAME,
+        messages=messages,
+        temperature=0.2,
+        stream=True,
+    )
+
+    full_answer = ""
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            full_answer += delta
+            yield delta
+
+    return full_answer.strip()
 
 
 # ---------- SIMPLE CLI TEST ----------
