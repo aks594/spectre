@@ -1,14 +1,14 @@
-### **InterviewAI – System Architecture Specification**
+### **Spectre – System Architecture Specification**
 
 **Version:** 1.0
-**Purpose:** This document defines the complete architecture for the InterviewAI desktop app (Electron-based), its backend (FastAPI + Python), STT engine, summarizer, LLM pipeline, and UI behavior.
+**Purpose:** This document defines the complete architecture for the Spectre desktop app (Electron-based), its backend (FastAPI + Python), STT engine, summarizer, LLM pipeline, and UI behavior.
 **Copilot must follow this specification when generating any new files.**
 
 ---
 
 # 1. Overview
 
-InterviewAI is a **local desktop application** that mimics the workflow of ParakeetAI:
+Spectre is a **local desktop application** that mimics the workflow of ParakeetAI:
 
 * Always-on-top transparent HUD (Command Bar)
 * Live real-time transcript from STT engine

@@ -7,7 +7,7 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/app/electron-app"
 ENV_FILE="$BACKEND_DIR/.env"
 
-printf "\n=== InterviewAI Setup Script ===\n"
+printf "\n=== Spectre Setup Script ===\n"
 printf "Project root: %s\n" "$ROOT_DIR"
 
 # 1. Create backend/.env with dummy values (if it does not already exist)

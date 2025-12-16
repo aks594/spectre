@@ -342,24 +342,37 @@ def _split_vision_answer(raw_text: str) -> tuple[str, str]:
 # ---------- PROMPT BUILDING ----------
 
 SYSTEM_PROMPT = """
-You are my private interview answer generator.
+You are my private, expert interview assistant.
 
-Your only job is to produce short, direct, ready-to-speak answers to interview questions.
+Your goal is to provide the **perfect response** for me to use immediately. You must adapt your output format based on the nature of my request.
 
-Rules:
-- Answer in 3–6 sentences unless the question clearly needs less.
-- Never explain your reasoning.
-- Never talk about what you are doing.
-- Never say things like "here is your answer" or "as an AI".
-- Use simple, natural spoken English.
-- Tone: confident, clear, concise.
-- Prefer examples and specifics over generic buzzwords.
-- Align every answer with my resume, skills, and the job description.
-- If relevant, briefly mention my experience or projects that make sense for the question.
-- If the question is behavioral, use STAR-style implicitly but do NOT say "STAR".
-- If the question is vague, assume the most common interview interpretation.
-- If you need up-to-date technical information or current documentation, use the web_search tool.
-- Format every response as Markdown bullet points: 3–6 bullets starting with "- ", each kept to 1–2 sentences.
+### **MODES OF OPERATION**
+
+1. **CODING & TECHNICAL TASKS** (Priority: High)
+   - If I ask for code, syntax, or a specific implementation:
+   - **IGNORE** length/bullet-point constraints.
+   - Provide **optimal, production-ready code** inside Markdown code blocks (e.g., ```python ... ```).
+   - Keep explanations minimal unless asked.
+
+2. **EXPLICIT FORMATTING** (Priority: High)
+   - If I ask for a specific format (e.g., "JSON", "Table", "One word", "List of 10"), **follow that instruction exactly**, overriding all default rules.
+
+3. **LATEST INFORMATION** (Priority: High)
+   - If I ask for current data (e.g., "Latest React version", "Stock price", "Recent news"):
+   - You **MUST** use the `web_search` tool to fetch real-time data.
+   - Do not rely on internal knowledge for time-sensitive facts.
+
+4. **DEFAULT INTERVIEW MODE** (Priority: Low - Fallback)
+   - For general behavioral or theoretical questions (e.g., "Tell me about yourself", "What is ACID?"):
+   - Answer in **3–6 concise Markdown bullet points**.
+   - Use natural, spoken English (confident, clear).
+   - Implicitly use STAR method for behavioral questions.
+   - Align with my Resume and JD Context provided below.
+
+### **UNIVERSAL RULES (Apply to ALL modes)**
+- **No Meta-Talk:** Never say "Here is the code", "As an AI", or "I have generated...". Just give the output.
+- **Context Awareness:** If relevant, inject details from my Resume/Skills implicitly.
+- **Directness:** Be ready to speak/paste immediately.
 """
 
 
@@ -639,9 +652,11 @@ Session context:
 
 if __name__ == "__main__":
     # Example: quick test without STT
-    raw_resume = """Experienced Software Engineer with a strong background in backend development and mobile app development using Flutter. Proficient in Dart, Python, and Java, with hands-on experience in building scalable web services and cross-platform mobile applications. Skilled in RESTful API design, database management, and cloud technologies. Adept at problem-solving and delivering high-quality code in agile environments. Passionate about learning new technologies and improving software performance."""
+    # raw_resume = """Experienced Software Engineer with a strong background in backend development and mobile app development using Flutter. Proficient in Dart, Python, and Java, with hands-on experience in building scalable web services and cross-platform mobile applications. Skilled in RESTful API design, database management, and cloud technologies. Adept at problem-solving and delivering high-quality code in agile environments. Passionate about learning new technologies and improving software performance."""
+    # raw_jd = """We are seeking a Software Engineer to join our dynamic team at Example Corp. The ideal candidate will have experience in backend development and mobile app development using Flutter. Responsibilities include designing and implementing scalable web services, collaborating with cross-functional teams, and contributing to the full software development lifecycle. Proficiency in Dart, Python, and Java is required, along with a strong understanding of RESTful API design and cloud technologies. The candidate should be able to work in an agile environment and have excellent problem-solving skills."""
 
-    raw_jd = """We are seeking a Software Engineer to join our dynamic team at Example Corp. The ideal candidate will have experience in backend development and mobile app development using Flutter. Responsibilities include designing and implementing scalable web services, collaborating with cross-functional teams, and contributing to the full software development lifecycle. Proficiency in Dart, Python, and Java is required, along with a strong understanding of RESTful API design and cloud technologies. The candidate should be able to work in an agile environment and have excellent problem-solving skills."""
+    raw_resume = ""
+    raw_jd = ""
 
     resume_summary = summarize_resume(raw_resume) if raw_resume.strip() else "No resume summary."
     jd_summary = summarize_jd(raw_jd) if raw_jd.strip() else "No JD summary."

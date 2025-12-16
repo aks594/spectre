@@ -1,6 +1,6 @@
 # Spectre – Stealth Real-Time Interview Copilot
 
-**InterviewAI** is a local, privacy-focused desktop application designed to assist developers during live technical interviews. It captures system audio in real-time, transcribes it, and uses an Agentic AI pipeline (Llama 3 via Groq + Tavily Search) to generate context-aware, technically accurate answers.
+**Spectre** is a local, privacy-focused desktop application designed to assist developers during live technical interviews. It captures system audio in real-time, transcribes it, and uses an Agentic AI pipeline (Llama 3 via Groq + Tavily Search) to generate context-aware, technically accurate answers.
 
 The application features a **Stealth HUD** and **Brain Overlay** that are invisible to screen capture tools (Zoom, Google Meet, Teams, OBS) using native Windows APIs.
 
@@ -248,7 +248,7 @@ npm start
 ## 📂 Project Structure
 
 ```
-InterviewAI/
+Spectre/
 ├── backend/                  # Python Logic
 │   ├── api_server.py         # FastAPI WebSocket Server
 │   ├── stt_engine.py         # Audio Capture & Whisper STT

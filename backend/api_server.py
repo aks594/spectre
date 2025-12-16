@@ -28,7 +28,7 @@ from services.llm_service import (
 
 load_dotenv()
 
-app = FastAPI(title="InterviewAI Backend", version="0.1.0")
+app = FastAPI(title="Spectre Backend", version="0.1.0")
 
 # Allow browser clients (local dev, desktop shell) to hit the API + WebSockets
 app.add_middleware(
