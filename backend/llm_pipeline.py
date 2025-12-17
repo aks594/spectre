@@ -54,6 +54,7 @@ VISION_HEADING_LOOKUP = {
 }
 VISION_SEPARATOR = "---SPLIT---"
 DEFAULT_IMPLEMENTATION_LANGUAGE = "Python"
+_VISION_SEP_REGEX = re.compile(r"\s*-{0,3}\s*SPLIT\s*-{0,3}\s*", re.IGNORECASE)
 
 LANGUAGE_ALIASES = {
     "cpp": "C++",
@@ -249,11 +250,18 @@ def _normalize_heading_token(value: str) -> str:
     return re.sub(r"[^a-z]", "", value.lower())
 
 
+def _strip_vision_separator(text: str) -> str:
+    """Remove stray separator tokens the model may have emitted inline."""
+    if not text:
+        return ""
+    return _VISION_SEP_REGEX.sub(" ", text).strip()
+
+
 def _sanitize_markdown_sections(answer_text: str) -> str:
     if not answer_text.strip():
         return ""
 
-    # Ensure code fences aren't glued to following headings (e.g., "``` ## Heading")
+    # Fix: Force newlines before headers if they are glued to code fences
     normalized_text = re.sub(
         r"```(\s*#+)",
         lambda match: "```\n" + match.group(1).lstrip(),
@@ -266,15 +274,30 @@ def _sanitize_markdown_sections(answer_text: str) -> str:
     seen: set[str] = set()
     in_code_block = False
 
-    stop_after_space = False
-
     for line in normalized_text.splitlines():
-        if stop_after_space:
-            break
         stripped = line.strip()
+        
+        # Toggle code block state
         if stripped.startswith("```"):
             in_code_block = not in_code_block
+
+        # CRITICAL FIX: Detect "Complexity Analysis" even if model forgot to close code block
+        is_complexity_header = re.match(r"^\s*##\s*Complexity Analysis", line, re.IGNORECASE)
+        if in_code_block and is_complexity_header:
+            in_code_block = False # Force close the block internally
+
         if not in_code_block:
+            # FIX: Handle rogue headers mid-line (e.g. "text... ## Intuition")
+            if current_section == "Complexity Analysis":
+                rogue_match = re.search(r"(\s*##\s*(Intuition|Algorithm|Implementation))", line, re.IGNORECASE)
+                if rogue_match:
+                    clean_content = line[:rogue_match.start()].rstrip()
+                    if clean_content:
+                        target = buckets.get(current_section)
+                        if target is not None:
+                            target.append(clean_content)
+                    break 
+
             heading_match = re.match(r"^\s{0,3}#{1,6}\s*(.+)$", line)
             if heading_match:
                 normalized = _normalize_heading_token(heading_match.group(1))
@@ -288,14 +311,17 @@ def _sanitize_markdown_sections(answer_text: str) -> str:
                     seen.add(canonical)
                     current_section = canonical
                     continue
+        
         target_bucket = buckets.get(current_section) if current_section else preamble
         target_bucket.append(line)
+
+        # Strict Stop Condition
         if (
             current_section == "Complexity Analysis"
             and not in_code_block
-            and stripped.lower().startswith("space complexity")
+            and re.match(r"^[-*]*\s*space\s*complexity", stripped, re.IGNORECASE)
         ):
-            stop_after_space = True
+            break
 
     blocks: List[str] = []
     preamble_text = "\n".join(preamble).strip()
@@ -315,28 +341,18 @@ def _sanitize_markdown_sections(answer_text: str) -> str:
 def _split_vision_answer(raw_text: str) -> tuple[str, str]:
     if not raw_text:
         return "", ""
-    summary_raw: str
-    answer_raw: str
 
-    if VISION_SEPARATOR in raw_text:
-        summary_raw, answer_raw = raw_text.split(VISION_SEPARATOR, 1)
-    else:
-        # Fallback 1: look for a standalone --- line
-        split_candidate = re.split(r"^\s*-{3}\s*$", raw_text, maxsplit=1, flags=re.MULTILINE)
-        if len(split_candidate) == 2:
-            summary_raw, answer_raw = split_candidate
-        else:
-            # Fallback 2: split at the first Intuition heading
-            heading_match = re.search(r"\n\s*##\s+Intuition", raw_text)
-            if heading_match:
-                idx = heading_match.start()
-                summary_raw = raw_text[:idx]
-                answer_raw = raw_text[idx:]
-            else:
-                summary_raw, answer_raw = raw_text, ""
-    summary = _dedupe_sentences(summary_raw.strip())
-    answer = _sanitize_markdown_sections(answer_raw.strip())
-    return summary, answer
+    # Robust split: tolerate missing hyphens/extra spaces
+    split_parts = re.split(_VISION_SEP_REGEX, raw_text, maxsplit=1)
+    if len(split_parts) == 2:
+        return _strip_vision_separator(split_parts[0]), _strip_vision_separator(split_parts[1])
+
+    # Fallback: look for a standalone --- line
+    split_candidate = re.split(r"^\s*-{3}\s*$", raw_text, maxsplit=1, flags=re.MULTILINE)
+    if len(split_candidate) == 2:
+        return _strip_vision_separator(split_candidate[0]), _strip_vision_separator(split_candidate[1])
+
+    return _strip_vision_separator(raw_text.strip()), ""
 
 
 # ---------- PROMPT BUILDING ----------
@@ -553,89 +569,181 @@ def stream_answer(session: SessionState, question: str) -> Generator[str, None, 
 
 
 def stream_vision_answer(image_data_base64: str, session: SessionState) -> Generator[str, None, str]:
-    """Stream a vision answer for a base64-encoded screenshot."""
+    """Stream a vision answer using a handover strategy (OCR -> Solver -> Stream)."""
     if not image_data_base64 or not image_data_base64.strip():
         raise ValueError("Image data is required for vision analysis.")
 
-    detected_language = _detect_code_language(image_data_base64)
+    def _parse_ocr_payload(raw: str) -> tuple[str, str]:
+        """Extract problem text and language from a vision OCR JSON-ish reply."""
+        if not raw:
+            return "", DEFAULT_IMPLEMENTATION_LANGUAGE
 
-    prompt = """
-You are a senior software engineer. Respond in exactly two parts using the delimiter "---SPLIT---".
-Part 1: One concise question summarizing the problem.
----SPLIT---
-Part 2: A detailed solution written in {language_hint}.
-Use ONLY these headers in this exact order:
+        json_candidate = None
+        brace_match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if brace_match:
+            json_candidate = brace_match.group(0)
+
+        if json_candidate:
+            try:
+                data = json.loads(json_candidate)
+                problem_text = (data.get("problem") or data.get("text") or raw).strip()
+                detected_lang = _normalize_language_label(data.get("language"))
+                return problem_text, detected_lang
+            except Exception:
+                pass
+
+        lang_match = re.search(r"language\s*[:=]\s*\"?([A-Za-z+#]+)\"?", raw, re.IGNORECASE)
+        detected_lang = _normalize_language_label(lang_match.group(1)) if lang_match else DEFAULT_IMPLEMENTATION_LANGUAGE
+        problem_text = raw.strip()
+        return problem_text, detected_lang
+
+    # Phase 1: OCR (extract text + language, do NOT solve)
+    try:
+        ocr_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Extract ONLY the problem statement text and detected programming language from the screenshot. "
+                    "Return strict JSON: {\"problem\": <text>, \"language\": <language>}. Do NOT solve."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Perform OCR and language detection. JSON only."},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_data_base64.strip()}"},
+                    },
+                ],
+            },
+        ]
+
+        ocr_resp = groq_client.chat.completions.create(
+            model=VISION_MODEL_NAME,
+            messages=ocr_messages,
+            temperature=0.0,
+            max_tokens=512,
+        )
+        ocr_payload = (ocr_resp.choices[0].message.content or "").strip()
+        problem_text, detected_language = _parse_ocr_payload(ocr_payload)
+    except Exception as exc:
+        print(f"[Vision OCR] failed: {exc}")
+        raise
+
+    if not problem_text:
+        raise ValueError("Could not extract problem text from the screenshot.")
+    
+    # Phase 2: Solver (Llama 3.3 with tools enabled)
+    solver_prompt = f"""
+You are a senior software engineer. A coding problem was extracted from a screenshot.
+
+Extracted problem:
+{problem_text}
+
+Detected language: {detected_language}
+
+Instructions:
+1) SUMMARY: Write exactly ONE concise sentence summarizing the approach. Do NOT use bullet points, dashes, or special characters.
+2) SEPARATOR: Output the literal delimiter "{VISION_SEPARATOR}" on its own strictly new line.
+3) ALGORITHM: Use a BULLETED LIST (e.g., "- Step 1") for the step-by-step logic.
+4) IMPLEMENTATION: Write the code in {detected_language}. YOU MUST CLOSE THE CODE BLOCK with "```" before starting the next section.
+5) HEADERS: Use ONLY these headers in this order:
 ## Intuition
-(Concise explanation of the approach)
 ## Algorithm
-(Step-by-step logic)
-## Implementation ({language_hint})
-<most_optimal_solution_code in {language_hint}>
+## Implementation ({detected_language})
 ## Complexity Analysis
 Time Complexity: <Big_O_Notation>, <Concise_Reason>
 Space Complexity: <Big_O_Notation>, <Concise_Reason>
 
-CRITICAL RULES:
-1. Do NOT repeat the Summary or the Question in Part 2.
-2. Do NOT repeat the headers or content.
-3. STOP output immediately after the Space Complexity line. Do not generate any further text.
-4. Be concise.
-5. Provide the MOST OPTIMAL code solution.
-6. The Implementation section must be valid {language_hint}.
+Rules:
+- Use {detected_language} for all code.
+- Provide the most optimal solution.
+- Call `web_search` if you need strictly up-to-date info.
+""".strip()
 
-Session context:
-- Company: {company}
-- Role: {role}
-- Extra: {extra}
-- Detected Language: {language_hint}
-""".format(
-        company=session.company,
-        role=session.role,
-        extra=session.extra_instructions or "None",
-        language_hint=detected_language,
-    )
+    base_user_msg = {"role": "user", "content": solver_prompt}
+    messages = [base_user_msg]
 
-    messages = [
-        {
-            "role": "system",
-            "content": "Provide succinct, actionable answers. Use bullet points only if the content clearly benefits from it.",
-        },
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt.strip()},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{image_data_base64.strip()}"},
-                },
-            ],
-        },
-    ]
+    try:
+        probe_resp = groq_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.2,
+            max_tokens=512,
+        )
+        assistant_message = probe_resp.choices[0].message
+        tool_calls = assistant_message.tool_calls or []
+        content = assistant_message.content or ""
+    except Exception as exc:
+        print(f"[Solver probe] failed: {exc}")
+        raise
 
-    stream = groq_client.chat.completions.create(
-        model=VISION_MODEL_NAME,
-        messages=messages,
-        temperature=0.2,
-        stream=True,
-    )
+    try:
+        if tool_calls:
+            tool_call = tool_calls[0]
+            args = json.loads(tool_call.function.arguments)
+            query = args.get("query", "")
+            print(f"🕵️ Searching (vision): {query}...")
+            search_results = tavily_client.search(query, search_depth="basic")
+            tool_content = json.dumps(search_results)
 
-    raw_output = ""
-    for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            raw_output += delta
+            messages = [
+                base_user_msg,
+                {"role": "assistant", "content": content, "tool_calls": tool_calls},
+                {"role": "tool", "tool_call_id": tool_call.id, "content": tool_content},
+            ]
 
+            stream = groq_client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=900,
+                stream=True,
+            )
+        else:
+            stream = groq_client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=900,
+                stream=True,
+            )
+
+        raw_output = ""
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                raw_output += delta
+    except Exception as exc:
+        print(f"[Solver stream] failed: {exc}")
+        yield "Error generating vision answer."
+        return ""
+
+    # Phase 3: Stream back in chunks with enforced delimiter
     summary_text, answer_text = _split_vision_answer(raw_output.strip())
-    separator = f"\n{VISION_SEPARATOR}\n"
 
+    # Guardrails: keep summary to a single sentence and strip any stray separators
+    summary_sentences = re.findall(r"[^.?!]+[.?!]?", summary_text)
+    if summary_sentences:
+        summary_text = summary_sentences[0].strip()
+    else:
+        summary_text = summary_text.strip()
+
+    answer_text = _strip_vision_separator(answer_text)
+    separator = f"\n{VISION_SEPARATOR}\n"
     emitted = False
+
     for chunk in _chunk_preserving(summary_text, max_len=1200):
         if chunk:
             yield chunk
             emitted = True
 
-    yield separator
-    emitted = True
+    if answer_text:
+        yield separator
+        emitted = True
 
     for chunk in _chunk_preserving(answer_text, max_len=1600):
         if chunk:
@@ -643,7 +751,7 @@ Session context:
             emitted = True
 
     if not emitted and raw_output:
-        yield raw_output
+        yield _strip_vision_separator(raw_output)
 
     return answer_text or summary_text or raw_output.strip()
 
