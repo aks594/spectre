@@ -314,13 +314,26 @@ const createHudWindow = () => {
   });
   // -----------------------------------------------
 
-  hudWindow.on('move', updateBrainPosition);
+  // --- FIX START: Re-apply Stealth on Interaction ---
+  hudWindow.on('show', () => {
+    setWindowHiddenFromCapture(hudWindow);
+  });
+
+  hudWindow.on('move', () => {
+    // FIX: If we are in the middle of a resize operation (which moves the window),
+    // ignore this event to prevent recursion/lag.
+    if (isResizing) return;
+
+    setWindowHiddenFromCapture(hudWindow); // <--- FORCE RE-APPLY
+    updateBrainPosition();
+  });
+
   hudWindow.on('resize', () => {
+    setWindowHiddenFromCapture(hudWindow);
     if (!brainWindow || brainWindow.isDestroyed()) {
       return;
     }
     if (isResizing) {
-      updateBrainPosition();
       return;
     }
     isResizing = true;
@@ -390,11 +403,11 @@ const createBrainWindow = () => {
     brainWindow = null;
   });
   brainWindow.on('resize', () => {
+    setWindowHiddenFromCapture(brainWindow);
     if (!hudWindow || hudWindow.isDestroyed()) {
       return;
     }
     if (isResizing) {
-      updateBrainPosition();
       return;
     }
     isResizing = true;
@@ -724,17 +737,19 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle('perform-resize', (event, payload = {}) => {
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!senderWindow || senderWindow.isDestroyed()) {
+    // FIX: Always operate on HUD as the 'master' window for width/x
+    // This prevents the Brain from 'snapping back' when resized directly.
+    if (!hudWindow || hudWindow.isDestroyed()) {
       return;
     }
+
     const direction = payload.direction === 'left' ? 'left' : 'right';
     const deltaX = Number(payload.deltaX) || 0;
     if (!deltaX) {
       return;
     }
 
-    const bounds = senderWindow.getBounds();
+    const bounds = hudWindow.getBounds();
     const minWidth = 320;
 
     let nextWidth = bounds.width;
@@ -749,13 +764,17 @@ const registerIpcHandlers = () => {
 
     isResizing = true;
     try {
-      senderWindow.setBounds({
+      // 1. Resize HUD first (Master)
+      hudWindow.setBounds({
         x: nextX,
         y: bounds.y,
         width: nextWidth,
         height: bounds.height,
       });
-      updateBrainPosition();
+      
+      // 2. Sync Brain immediately
+      // We call this manually here so we don't rely on async event listeners
+      updateBrainPosition(); 
     } finally {
       isResizing = false;
     }
@@ -978,11 +997,13 @@ const startZOrderEnforcer = () => {
     if (hudWindow && !hudWindow.isDestroyed() && hudWindow.isVisible()) {
       hudWindow.setAlwaysOnTop(true, 'screen-saver');
       hudWindow.moveTop(); // Native OS call to bring to front
+      setWindowHiddenFromCapture(hudWindow);
     }
     // Force Brain to top (if meant to be visible)
     if (brainWindow && !brainWindow.isDestroyed() && brainWindow.isVisible()) {
       brainWindow.setAlwaysOnTop(true, 'screen-saver');
       brainWindow.moveTop();
+      setWindowHiddenFromCapture(hudWindow);
     }
   }, 2000); // Run every 2 seconds
 };

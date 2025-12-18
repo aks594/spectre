@@ -624,3 +624,37 @@
   color: #ffffff;
   border-color: #0a0a0a;
 }
+
+.move-handle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #000000;
+  cursor: grab;
+  /* CRITICAL: This enables native window dragging */
+  -webkit-app-region: drag !important; 
+  user-select: none;
+  background: #000000;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.move-handle:active {
+  cursor: grabbing;
+  background: #22c55e; /* Green accent when holding */
+  color: black;
+}
+
+.move-handle:hover {
+  background: #0a0a0a;
+  border-color: #0a0a0a;
+}
+
+/* Ensure the icon doesn't block the drag region */
+.move-handle svg {
+  pointer-events: none;
+}

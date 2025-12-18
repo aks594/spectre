@@ -39,8 +39,10 @@ const setupResizeHandles = () => {
     let lastX = 0;
 
     const onMouseMove = (event) => {
-      const deltaX = event.clientX - lastX;
-      lastX = event.clientX;
+      // FIX: Use screenX instead of clientX to avoid jitter when window moves
+      const currentX = event.screenX; 
+      const deltaX = currentX - lastX;
+      lastX = currentX;
       window.electronAPI?.performResize?.({ direction, deltaX });
     };
 
@@ -51,7 +53,8 @@ const setupResizeHandles = () => {
 
     element.addEventListener('mousedown', (event) => {
       event.preventDefault();
-      lastX = event.clientX;
+      // FIX: Initialize with screenX
+      lastX = event.screenX; 
       window.electronAPI?.startResize?.(direction);
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
